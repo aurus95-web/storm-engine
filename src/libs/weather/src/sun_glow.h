@@ -120,10 +120,11 @@ class SUNGLOW : public Entity
     bool bHaveGlow, bHaveFlare, bHaveOverflow, bHaveReflection;
     bool bMoon;
     float fMinAlphaValue;
+    float fVisibleFraction = 1.0f; // visible part of the sun disc
 
     float fBottomClip;
 
-    float LayerTrace(CVECTOR &vSrc, entity_container_cref its) const;
+    float LayerTrace(const CVECTOR &vSrc, const CVECTOR &vDir, entity_container_cref its) const;
     void GenerateSunGlow();
     void DrawReflection() const;
     void Release();

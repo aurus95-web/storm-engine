@@ -127,10 +127,10 @@ void SUNGLOW::Execute(uint32_t Delta_Time)
 {
     if (bHaveGlow)
     {
-        fAlpha += ((bVisible) ? 1.0f : -1.0f) * static_cast<float>(Delta_Time) * Glow.fDecayTime * 0.001f;
-        fAlpha = CLAMP(fAlpha);
-        if (fAlpha < fMinAlphaValue)
-            fAlpha = fMinAlphaValue;
+        // move towards the visible part of the sun disc
+        const float fStep = static_cast<float>(Delta_Time) * Glow.fDecayTime * 0.001f;
+        fAlpha = (fAlpha < fVisibleFraction) ? std::min(fAlpha + fStep, fVisibleFraction)
+                                             : std::max(fAlpha - fStep, fVisibleFraction);
     }
 
     if (bHaveFlare)
@@ -150,14 +150,12 @@ void SUNGLOW::Execute(uint32_t Delta_Time)
     }
 }
 
-float SUNGLOW::LayerTrace(CVECTOR &vSrc, entity_container_cref its) const
+float SUNGLOW::LayerTrace(const CVECTOR &vSrc, const CVECTOR &vDir, entity_container_cref its) const
 {
     if (its.empty())
         return 2.0f;
 
-    CVECTOR vDst;
-    pWeather->GetVector(whv_sun_pos, &vDst);
-    vDst = vSrc + (!vDst) * 10000.0f;
+    const CVECTOR vDst = vSrc + vDir * 10000.0f;
     return pCollide->Trace(its, vSrc, vDst, nullptr, 0);
 }
 
@@ -193,19 +191,30 @@ void SUNGLOW::Realize(uint32_t Delta_Time)
     if (Delta_Time)
         bVisibleFlare = bTempVisibleFlare;
 
-    bVisible = true;
     fMinAlphaValue = 0.0f;
 
-    auto fSunTrace = LayerTrace(vCamPos, core.GetEntityIds(SUN_TRACE));
-    auto fSailTrace = LayerTrace(vCamPos, core.GetEntityIds(SAILS_TRACE));
-
-    if (fSunTrace <= 1.0f || fSailTrace <= 1.0f)
-        bVisible = false;
-    if (fSailTrace <= 1.0f && fSunTrace > 1.0f)
+    // The camera orbits the ship, so looking at the sun usually puts masts and sails in front of it.
+    // Instead of a single ray to the center, trace the center and four points on the bright part of the
+    // disc: the glow fades by the covered part (sails let 20% through), not completely behind a mast.
+    CVECTOR vSide = vSunDir ^ CVECTOR(0.0f, 1.0f, 0.0f);
+    vSide = (~vSide > 1e-6f) ? !vSide : CVECTOR(1.0f, 0.0f, 0.0f); // the sun at the zenith
+    const CVECTOR vUp = !(vSide ^ vSunDir);
+    const float fSampleRadius = 0.1f * Glow.fGlowSize;
+    const CVECTOR vOffsets[] = {CVECTOR(0.0f, 0.0f, 0.0f), vSide * fSampleRadius, vSide * -fSampleRadius,
+                                vUp * fSampleRadius, vUp * -fSampleRadius};
+    const auto &sunTraceIds = core.GetEntityIds(SUN_TRACE);
+    const auto &sailTraceIds = core.GetEntityIds(SAILS_TRACE);
+    float fVisible = 0.0f;
+    for (const auto &vOffset : vOffsets)
     {
-        bVisible = false;
-        fMinAlphaValue = 0.2f;
+        const CVECTOR vDir = !(vSunDir * Glow.fDist + vOffset);
+        if (LayerTrace(vCamPos, vDir, sunTraceIds) <= 1.0f)
+            continue;
+        fVisible += (LayerTrace(vCamPos, vDir, sailTraceIds) <= 1.0f) ? 0.2f : 1.0f;
     }
+    fVisibleFraction = fVisible / std::size(vOffsets);
+
+    bVisible = fVisibleFraction > 0.5f;
 
     /*walker_t pVW = core.LayerGetWalker("sun_trace");
     if (pVW)
@@ -698,7 +707,7 @@ void SUNGLOW::DrawRect(uint32_t dwColor, const CVECTOR &pos, float fSize, float 
         }
 
         // add a point of intersection with the clipping plane between the 4th and 1st points
-        if ((vp3.y >= fBClip) != (vp4.y >= fBClip))
+        if ((vp4.y >= fBClip) != (vp1.y >= fBClip))
         {
             auto fK = vp1.y - vp4.y;
             if (fK != 0.f)

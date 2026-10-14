@@ -83,6 +83,9 @@ ninja -C build dependencies && ninja -C build
    грузит stb_image (`TextureLoadUsingD3DX`). Язык выбирается в игре (Options → Language), `language.ini` не влияет.
    Море, отражения, облака карты мира проверены по официальным скриншотам BNH (itch.io).
    Осталось: звук (FMOD), ролики (WMV — нет декодера на Apple, план: перекодировать в H.264 + AVFoundation).
+   Исправлены ошибки самого движка PiratesAhoy (есть и в Windows-версии BNH): вылет по assert стека вызовов
+   скриптов при заходе в порт, свечение парусов ночью (цвета `r,g,b,a` в `rigging.ini`), пропадание солнца
+   при повороте камеры (обрезка спрайта по горизонту). Для игры использовать Release-сборку.
    Управление: меню F1, быстрое сохранение/загрузка F5/F6 (на Mac — fn+F…), F10 — отладочное меню.
    Ошибки рендера, найденные в игре, и их причины:
    - DXVK-форк без spec-констант типа сэмплера (MoltenVK) объявляет все сэмплеры ps_1_x как 2D.
@@ -100,6 +103,13 @@ ninja -C build dependencies && ninja -C build
    генерирует `tools/shader-bins/font_shaders.py`, проверено `tools/shader-bins/test_shaders.cpp`
    через DXVK на lavapipe. При новых HLSL-шейдерах в `.fx` нужно добавлять такие же бинарники.
 4. [ ] iPad: подпись, запуск, пути, производительность.
+   iPad владельца на iOS 15 — минимальная версия в пресете `ios` и `apple.cmake` 15.0 (MoltenVK 1.4.1 требует 14.0).
+   MoltenVK для iOS (Homebrew собирает только macOS): релиз v1.4.1 `MoltenVK-ios.tar` распакован в
+   `~/Developer/moltenvk-ios`, путь для `-DSTORM_MOLTENVK_PATH`:
+   `~/Developer/moltenvk-ios/MoltenVK/MoltenVK/dynamic/MoltenVK.xcframework/ios-arm64/MoltenVK.framework`.
+   Ждём: установку Xcode (пока только Command Line Tools), Apple ID в Xcode, подключённый iPad.
+   Данные BNH — 16 ГБ, их надо скопировать в Documents приложения.
+   Вне Windows нельзя использовать `std::format` и вычисления с float в `<charconv>` (нужны macOS 13.3 / iOS 16.3).
 5. [ ] Тач-управление: тап = клик, долгое нажатие = правый клик, щипок = колесо
    (см. раздел Touch input в playbook Generals), ввод текста, разрешение интерфейса.
    Важно: движок включает `SDL_SetRelativeMouseMode` (`src/libs/input/src/sdl_input.cpp`) и сам ведёт

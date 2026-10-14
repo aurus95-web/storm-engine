@@ -17,7 +17,7 @@ set(STORM_MOLTENVK_PATH "" CACHE FILEPATH
 
 # keep in sync with CMakePresets.json
 if (IOS)
-    set(storm_min_version 16.0)
+    set(storm_min_version 15.0)
     set(STORM_APPLE_MIN_VERSION_FLAG "-miphoneos-version-min=${storm_min_version}")
 else()
     set(storm_min_version 12.0)

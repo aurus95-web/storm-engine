@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cmath>
 
-#include <xmmintrin.h>
+#include "storm_simd.h"
 
 #include "c_vector.h"
 

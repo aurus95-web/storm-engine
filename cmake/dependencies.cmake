@@ -112,12 +112,6 @@ if (STORM_FETCH_SDL)
     storm_fetch(sdl2 https://github.com/libsdl-org/SDL.git release-2.32.2)
     FetchContent_MakeAvailable(sdl2)
 
-    # sources include SDL as <SDL2/SDL.h>
-    set(STORM_SDL_INCLUDE_ROOT ${CMAKE_BINARY_DIR}/sdl2-include)
-    file(MAKE_DIRECTORY ${STORM_SDL_INCLUDE_ROOT})
-    file(CREATE_LINK ${sdl2_SOURCE_DIR}/include ${STORM_SDL_INCLUDE_ROOT}/SDL2 SYMBOLIC)
-    target_include_directories(SDL2-static INTERFACE $<BUILD_INTERFACE:${STORM_SDL_INCLUDE_ROOT}>)
-
     set(SDL2_LIBRARIES SDL2::SDL2-static)
     if (TARGET SDL2::SDL2main)
         list(APPEND SDL2_LIBRARIES SDL2::SDL2main)

@@ -239,7 +239,7 @@ bool DX9RENDER_SCRIPT_LIBRIARY::Init()
     return true;
 }
 
-uint64_t _rdtsc;
+uint64_t splashRdtsc;
 uint32_t dwTotalSize = 0;
 uint32_t dwSplashTime = 0;
 bool bSplash = false;
@@ -2382,11 +2382,11 @@ void DX9RENDER::RenderAnimation(int32_t ib, void *src, int32_t numVrts, int32_t 
         }
         // Copy verteces
         uint8_t *ptr;
-        RDTSC_B(_rdtsc);
+        RDTSC_B(splashRdtsc);
         if (CHECKD3DERR(aniVBuffer->Lock(0, size, (void **)&ptr, 0)) == true)
             return;
         dwNumLV++;
-        RDTSC_E(_rdtsc);
+        RDTSC_E(splashRdtsc);
         memcpy(ptr, src, size);
         CHECKD3DERR(aniVBuffer->Unlock());
     }

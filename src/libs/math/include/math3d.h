@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-#include <xmmintrin.h> // espkk # remove inline asm # 30/Dec/2017
+#include "storm_simd.h" // espkk # remove inline asm # 30/Dec/2017
 
 //#define inline __forceinline
 

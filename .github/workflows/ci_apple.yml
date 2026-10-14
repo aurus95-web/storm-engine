@@ -1,0 +1,55 @@
+name: CI Apple
+
+# macOS runners are billed at a higher rate for private repositories, so this
+# workflow only runs on demand (Actions tab -> CI Apple -> Run workflow).
+on:
+  workflow_dispatch:
+    inputs:
+      ios:
+        description: 'Also build for iOS (unsigned)'
+        type: boolean
+        default: true
+
+env:
+  MOLTENVK_VERSION: v1.4.1
+
+jobs:
+  build-macos:
+    runs-on: macos-15
+    name: 'macOS [Debug]'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install tools
+      run: brew install meson ninja glslang pkg-config molten-vk
+    - name: Configure
+      run: cmake --preset macos
+    - name: Build
+      run: cmake --build --preset macos-debug
+    - name: Upload engine
+      uses: actions/upload-artifact@v4
+      with:
+        name: engine-macos-debug
+        path: |
+          build/macos/Debug/engine*
+          build/macos/Debug/*.dylib
+          build/macos/Debug/resource
+
+  build-ios:
+    if: ${{ inputs.ios }}
+    runs-on: macos-15
+    name: 'iOS [Debug, unsigned]'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install tools
+      run: brew install meson ninja glslang pkg-config
+    - name: Download MoltenVK for iOS
+      run: |
+        curl -sSL -o moltenvk-ios.tar "https://github.com/KhronosGroup/MoltenVK/releases/download/${MOLTENVK_VERSION}/MoltenVK-ios.tar"
+        mkdir moltenvk && tar -xf moltenvk-ios.tar -C moltenvk
+        framework=$(find "$PWD/moltenvk" -path "*dynamic/MoltenVK.xcframework/ios-arm64/MoltenVK.framework" -maxdepth 7 | head -1)
+        echo "Found: $framework"
+        echo "MOLTENVK_FRAMEWORK=$framework" >> "$GITHUB_ENV"
+    - name: Configure
+      run: cmake --preset ios -DSTORM_MOLTENVK_PATH="$MOLTENVK_FRAMEWORK"
+    - name: Build
+      run: cmake --build --preset ios-debug -- CODE_SIGNING_ALLOWED=NO

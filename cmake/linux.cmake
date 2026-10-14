@@ -54,7 +54,9 @@ else()
         GIT_SHALLOW       ON
         BUILD_ALWAYS      OFF
         CONFIGURE_HANDLED_BY_BUILD ON
-        CONFIGURE_COMMAND meson setup ../dxvk-native --buildtype=release -Denable_d3d11=false -Denable_d3d10=false -Denable_dxgi=false
+        # this DXVK version misses <cstdint> includes required by newer libstdc++
+        CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env "CXXFLAGS=-include cstdint"
+                          meson setup ../dxvk-native --buildtype=release -Denable_d3d11=false -Denable_d3d10=false -Denable_dxgi=false
         BUILD_COMMAND     ninja
         INSTALL_COMMAND   ""
     )

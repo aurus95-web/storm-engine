@@ -388,7 +388,7 @@ void WdmClouds::LRender(VDX9RENDER *rs)
         fx_->SetMatrix(cloudMatrix_, clouds);
 #else
         rs->SetVertexShaderConstantF(0, prj, 4);
-        rs->SetVertexShaderConstantF(4, clouds, 2);
+        rs->SetVertexShaderConstantF(4, clouds, 3);
 #endif
 
         rs->DrawRects(rects, count, "WdmClouds", 2, 2);

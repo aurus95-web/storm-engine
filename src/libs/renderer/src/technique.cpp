@@ -495,6 +495,7 @@ SRSPARAM MYD3DTEXTUREOP[] = {{"disable", D3DTOP_DISABLE},
                              {"addsigned", D3DTOP_ADDSIGNED},
                              {"addsigned2x", D3DTOP_ADDSIGNED2X},
                              {"substract", D3DTOP_SUBTRACT},
+                             {"subtract", D3DTOP_SUBTRACT},
                              {"addsmooth", D3DTOP_ADDSMOOTH},
                              {"blenddiffusealpha", D3DTOP_BLENDDIFFUSEALPHA},
                              {"blendtexturealpha", D3DTOP_BLENDTEXTUREALPHA},
@@ -849,6 +850,24 @@ uint32_t CTechnique::GetCode(char *pStr, SRSPARAM *pParam, uint32_t dwNumParam, 
     Assert(pStr);
 
     uint32_t dwCode = 0;
+    if (pParam && dwNumParam && strchr(pStr, '|'))
+    {
+        // D3DX effect syntax combines flags, e.g. "texture | complement"
+        std::string sFlags(pStr);
+        size_t start = 0;
+        while (start <= sFlags.size())
+        {
+            auto end = sFlags.find('|', start);
+            if (end == std::string::npos)
+                end = sFlags.size();
+            auto flag = sFlags.substr(start, end - start);
+            flag.erase(0, flag.find_first_not_of(" \t"));
+            flag.erase(flag.find_last_not_of(" \t") + 1);
+            dwCode |= GetCode(flag.data(), pParam, dwNumParam, pPassCode, bCanBeNumber);
+            start = end + 1;
+        }
+        return dwCode;
+    }
     if (pParam && dwNumParam)
     {
         uint32_t dwIndex = GetIndex(pStr, pParam, dwNumParam, bCanBeNumber);

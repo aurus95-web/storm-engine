@@ -83,7 +83,7 @@ ExternalProject_Add(dxvk
     GIT_REPOSITORY    ${STORM_DXVK_REPOSITORY}
     GIT_TAG           ${STORM_DXVK_TAG}
     GIT_SUBMODULES_RECURSE ON
-    PATCH_COMMAND     git apply --whitespace=nowarn ${CMAKE_CURRENT_LIST_DIR}/dxvk-apple.patch
+    PATCH_COMMAND     ${CMAKE_COMMAND} -DPATCH=${CMAKE_CURRENT_LIST_DIR}/dxvk-apple.patch -P ${CMAKE_CURRENT_LIST_DIR}/apply-patch.cmake
     UPDATE_DISCONNECTED ON
     CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
                           CC=clang CXX=clang++

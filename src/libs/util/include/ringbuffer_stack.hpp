@@ -86,7 +86,12 @@ template <typename T, detail::power_of_two auto SIZE> class ringbuffer_stack fin
 
     constexpr void pop() noexcept
     {
-        assert(!empty());
+        // pushing more than SIZE values drops the oldest ones, so popping them is a no-op
+        // (the script call stack nests deeper than SIZE)
+        if (empty())
+        {
+            return;
+        }
         end_ = circular_dec(end_);
 
         --size_;

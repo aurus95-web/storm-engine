@@ -453,12 +453,15 @@ void FILE_SERVICE::ScanResourcePaths()
     }
     ResourcePaths.clear();
     std::string ExePath = "";
-    for (const auto &entry : std::filesystem::recursive_directory_iterator("."))
+    // folders that can not be read (e.g. in a sandbox) are skipped instead of aborting the scan
+    constexpr auto options = std::filesystem::directory_options::skip_permission_denied;
+    std::error_code ec;
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(".", options, ec))
     {
         AddEntryToResourcePaths(entry, ExePath);
     }
     ExePath = fio->_GetExecutableDirectory();
-    auto it = std::filesystem::recursive_directory_iterator(ExePath);
+    auto it = std::filesystem::recursive_directory_iterator(ExePath, options, ec);
     std::ranges::for_each(ExePath, [](char &c) { c = std::tolower(c); });
     for (const auto &entry : it)
     {

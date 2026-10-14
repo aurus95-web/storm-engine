@@ -41,3 +41,22 @@ STORM_SETUP(
 )
 
 add_dependencies(engine engine_techniques)
+
+if (APPLE)
+    storm_apple_bundle_runtime(engine)
+endif()
+
+if (IOS)
+    set(STORM_IOS_BUNDLE_ID "com.example.stormengine" CACHE STRING "iOS bundle identifier (must be unique for your Apple ID)")
+    set_target_properties(engine PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "${STORM_IOS_BUNDLE_ID}"
+        MACOSX_BUNDLE_BUNDLE_NAME "Storm Engine"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${STORM_IOS_BUNDLE_ID}"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+    )
+endif()

@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <thread>
 
 #include <SDL2/SDL.h>
@@ -7,6 +8,11 @@
 #endif
 #include <spdlog/spdlog.h>
 #include <CLI/CLI.hpp>
+
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#include <unistd.h>
+#endif
 
 #include "core_private.h"
 #include "fs.h"
@@ -85,6 +91,38 @@ void mimalloc_fun(const char *msg, void *arg)
 }
 #endif
 
+#ifdef __APPLE__
+// DXVK and SDL load Vulkan (MoltenVK) at runtime, point SDL to the copy that is bundled with the engine
+// and, on iOS, run from the app's Documents folder which contains the game data
+void SetupApplePlatform()
+{
+    if (char *base_path = SDL_GetBasePath())
+    {
+#if TARGET_OS_IPHONE
+        const std::string moltenvk = std::string(base_path) + "Frameworks/MoltenVK.framework/MoltenVK";
+#else
+        const std::string moltenvk = std::string(base_path) + "libMoltenVK.dylib";
+#endif
+        SDL_SetHint(SDL_HINT_VULKAN_LIBRARY, moltenvk.c_str());
+        SDL_free(base_path);
+    }
+
+#if TARGET_OS_IPHONE
+    if (const char *home = std::getenv("HOME"))
+    {
+        const std::string documents = std::string(home) + "/Documents";
+        if (chdir(documents.c_str()) != 0)
+        {
+            SDL_Log("Unable to switch to the Documents folder");
+        }
+        // game files are looked up case-insensitively through a scan of the working directory
+        fio->ScanResourcePaths();
+    }
+    SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "2");
+#endif
+}
+#endif
+
 } // namespace
 
 void HandleWindowEvent(const storm::OSWindow::Event &event)
@@ -140,6 +178,10 @@ int main(int argc, char *argv[])
     {
         return app.exit(e);
     }
+
+#ifdef __APPLE__
+    SetupApplePlatform();
+#endif
 
     // Prevent multiple instances
 #ifdef _WIN32 // CreateEventA

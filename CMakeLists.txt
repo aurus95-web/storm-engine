@@ -51,9 +51,7 @@ set(STORM_WATERMARK_FILE ${CMAKE_CURRENT_BINARY_DIR}/watermark.hpp CACHE FILEPAT
 
 if (WIN32)
     set(SDL2_LIBRARIES "sdl")
-elseif (APPLE)
-    include(apple)
-else()
+elseif (NOT APPLE)
     include(linux)
 endif()
 
@@ -89,6 +87,11 @@ find_package(SDL2 REQUIRED)
 find_package(Catch2 REQUIRED)
 else()
     include(dependencies)
+endif()
+
+if (APPLE)
+    # needs SDL2 from dependencies.cmake
+    include(apple)
 endif()
 
 if (STORM_USE_SENTRY)

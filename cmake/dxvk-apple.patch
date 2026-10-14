@@ -1,0 +1,81 @@
+diff --git a/src/vulkan/vulkan_loader.cpp b/src/vulkan/vulkan_loader.cpp
+index 518efcb..de5bc87 100644
+--- a/src/vulkan/vulkan_loader.cpp
++++ b/src/vulkan/vulkan_loader.cpp
+@@ -18,10 +18,14 @@ namespace dxvk::vk {
+ #elif defined(__APPLE__)
+     // macOS: try the Vulkan loader (from Vulkan SDK) and MoltenVK directly.
+     // LoadLibraryA() maps to dlopen() on non-Windows DXVK native builds.
+-    static const std::array<const char*, 3> dllNames = {{
++    // The @executable_path entries cover app bundles (iOS can not dlopen by bare
++    // name) and a MoltenVK copied next to the executable on macOS.
++    static const std::array<const char*, 6> dllNames = {{
++      "@executable_path/Frameworks/MoltenVK.framework/MoltenVK",
++      "@executable_path/Frameworks/libMoltenVK.dylib",
++      "@executable_path/libMoltenVK.dylib",
+       "libvulkan.dylib",
+       "libvulkan.1.dylib",
+-      "libMoltenVK.dylib",
+     }};
+ #else
+     static const std::array<const char*, 2> dllNames = {{
+diff --git a/src/wsi/sdl2/wsi_platform_sdl2.cpp b/src/wsi/sdl2/wsi_platform_sdl2.cpp
+index 203cb6d..5329d4e 100644
+--- a/src/wsi/sdl2/wsi_platform_sdl2.cpp
++++ b/src/wsi/sdl2/wsi_platform_sdl2.cpp
+@@ -10,15 +10,26 @@
+ namespace dxvk::wsi {
+ 
+   Sdl2WsiDriver::Sdl2WsiDriver() {
++#if defined(__APPLE__)
++    // SDL2 is embedded in the app bundle / placed next to the executable,
++    // a bare library name is not found by dlopen there
++    for (const char* name : { "@executable_path/Frameworks/libSDL2-2.0.0.dylib",
++                              "@executable_path/libSDL2-2.0.0.dylib",
++                              "@rpath/libSDL2-2.0.0.dylib",
++                              "libSDL2-2.0.0.dylib" }) {
++      libsdl = LoadLibraryA(name);
++      if (libsdl != nullptr)
++        break;
++    }
++#else
+     libsdl = LoadLibraryA( // FIXME: Get soname as string from meson
+ #if defined(_WIN32)
+         "SDL2.dll"
+-#elif defined(__APPLE__)
+-        "libSDL2-2.0.0.dylib"
+ #else
+         "libSDL2-2.0.so.0"
+ #endif
+       );
++#endif
+     if (libsdl == nullptr)
+       throw DxvkError("SDL2 WSI: Failed to load SDL2 DLL.");
+ 
+diff --git a/src/wsi/sdl2/wsi_platform_sdl2_funcs.h b/src/wsi/sdl2/wsi_platform_sdl2_funcs.h
+index 4396a6b..a9b77af 100644
+--- a/src/wsi/sdl2/wsi_platform_sdl2_funcs.h
++++ b/src/wsi/sdl2/wsi_platform_sdl2_funcs.h
+@@ -11,6 +11,7 @@ SDL_PROC(int, SDL_SetWindowFullscreen, (SDL_Window*, Uint32))
+ SDL_PROC(SDL_WindowFlags, SDL_GetWindowFlags, (SDL_Window *))
+ SDL_PROC(void, SDL_GetWindowSize, (SDL_Window*, int*, int*))
+ SDL_PROC(void, SDL_SetWindowSize, (SDL_Window*, int, int))
++SDL_PROC(void, SDL_Vulkan_GetDrawableSize, (SDL_Window*, int*, int*))
+ SDL_PROC(SDL_bool, SDL_Vulkan_CreateSurface, (SDL_Window*, VkInstance, VkSurfaceKHR*))
+ SDL_PROC(SDL_bool, SDL_Vulkan_GetInstanceExtensions, (SDL_Window*, unsigned int*, const char**))
+ SDL_PROC(int, SDL_Vulkan_LoadLibrary, (const char*))
+diff --git a/src/wsi/sdl2/wsi_window_sdl2.cpp b/src/wsi/sdl2/wsi_window_sdl2.cpp
+index e0c48fd..a0bb896 100644
+--- a/src/wsi/sdl2/wsi_window_sdl2.cpp
++++ b/src/wsi/sdl2/wsi_window_sdl2.cpp
+@@ -20,7 +20,9 @@ namespace dxvk::wsi {
+     SDL_Window* window = fromHwnd(hWindow);
+ 
+     int32_t w, h;
+-    SDL_GetWindowSize(window, &w, &h);
++    // Pixels, not points: on high-DPI displays (Retina, iOS) the Metal drawable
++    // is larger than the logical window size. Same as SDL_GetWindowSize otherwise.
++    SDL_Vulkan_GetDrawableSize(window, &w, &h);
+ 
+     if (pWidth)
+       *pWidth = uint32_t(w);

@@ -4,6 +4,7 @@
 #include <storm/config/config.hpp>
 #include <storm/data.hpp>
 
+#include <array>
 #include <vector>
 
 namespace storm::rigging {
@@ -49,10 +50,11 @@ struct SailConfig {
     Vector fs;
     Vector ss;
 
-    uint32_t diffuseColor{};
-    uint32_t ambientColor{};
-    uint32_t specularColor{};
-    uint32_t emissiveColor{};
+    // material colors as r, g, b, a (components may exceed 1)
+    std::array<float, 4> diffuseColor{};
+    std::array<float, 4> ambientColor{};
+    std::array<float, 4> specularColor{};
+    std::array<float, 4> emissiveColor{};
     double materialPower{};
 
     int GROUP_UPDATE_TIME = 4000;

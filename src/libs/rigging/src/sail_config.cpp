@@ -26,6 +26,27 @@ void from_json(const storm::Data &node, Vector &vector)
 
 namespace storm::rigging {
 
+namespace {
+
+// Material colors are written as "r,g,b,a" floats in rigging.ini, "#rrggbb" and integers are accepted too
+std::array<float, 4> GetMaterialColor(const Data &node, const std::array<float, 4> &default_value)
+{
+    if (node.is_string()) {
+        std::array<float, 4> color{};
+        const auto value = node.get<std::string>();
+        if (sscanf(value.c_str(), "%f,%f,%f,%f", &color[0], &color[1], &color[2], &color[3]) == 4) {
+            return color;
+        }
+    }
+    if (const auto color = config::GetColor(node)) {
+        return {static_cast<float>(*color >> 24 & 0xff) / 255.0f, static_cast<float>(*color >> 16 & 0xff) / 255.0f,
+                static_cast<float>(*color >> 8 & 0xff) / 255.0f, static_cast<float>(*color & 0xff) / 255.0f};
+    }
+    return default_value;
+}
+
+} // namespace
+
 void from_json(const Data &json, SailConfig &config)
 {
     // load texture names
@@ -69,10 +90,10 @@ void from_json(const Data &json, SailConfig &config)
     config.ROLLINGSPEED = json.value<double>("ROLLINGSPEED", 0.0003);
 
     // load material parameters
-    config.diffuseColor = config::GetColor(json["Diffuse"]).value_or(0);
-    config.ambientColor = config::GetColor(json["Ambient"]).value_or(0);
-    config.specularColor = config::GetColor(json["Specular"]).value_or(0);
-    config.emissiveColor = config::GetColor(json["Emissive"]).value_or(0xb3b3b3b3);
+    config.diffuseColor = GetMaterialColor(json["Diffuse"], {});
+    config.ambientColor = GetMaterialColor(json["Ambient"], {});
+    config.specularColor = GetMaterialColor(json["Specular"], {});
+    config.emissiveColor = GetMaterialColor(json["Emissive"], {0.7f, 0.7f, 0.7f, 0.7f});
     config.materialPower = json.value<double>("Power", 0.0);
 
     // load ROLLING SAIL form table

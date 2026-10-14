@@ -16,13 +16,8 @@
 
 namespace {
 
-D3DCOLORVALUE ColorToD3D(uint32_t color) {
-    return D3DCOLORVALUE{
-        static_cast<float>(color >> 24 & 0xff) / 255.0f,
-        static_cast<float>(color >> 16 & 0xff) / 255.0f,
-        static_cast<float>(color >> 8 & 0xff) / 255.0f,
-        static_cast<float>(color & 0xff) / 255.0f,
-    };
+D3DCOLORVALUE ColorToD3D(const std::array<float, 4> &color) {
+    return D3DCOLORVALUE{color[0], color[1], color[2], color[3]};
 }
 
 } // namespace

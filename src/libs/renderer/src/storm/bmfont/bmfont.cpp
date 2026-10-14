@@ -1,5 +1,6 @@
 #include "bmfont.hpp"
 #include "core.h"
+#include "file_service.h"
 
 #include <array>
 #include <filesystem>
@@ -171,7 +172,8 @@ BmFont &BmFont::SetGradient(int32_t gradient_texture)
 
 void BmFont::LoadFromFnt(const std::string &file_path)
 {
-    const std::filesystem::path path = file_path;
+    // resolves Windows separators and letter case on other platforms
+    const std::filesystem::path path = std::filesystem::u8path(fio->ConvertPathResource(file_path.c_str()));
     const auto directory = path.parent_path();
     std::ifstream file(path, std::ios::binary);
 

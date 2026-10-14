@@ -108,7 +108,7 @@ std::optional<FindConfigResult> FindConfigFile(const std::filesystem::path &sour
     ConfigFormat preferred_format = GetPreferredConfigFormat(source_path);
 
     const std::filesystem::path first_test_path = GetConfigFilePath(source_path, preferred_format);
-    if (exists(first_test_path))
+    if (fio->_FileOrDirectoryExists(first_test_path.string().c_str()))
     {
         return FindConfigResult{
             preferred_format,
@@ -123,7 +123,7 @@ std::optional<FindConfigResult> FindConfigFile(const std::filesystem::path &sour
             continue;
         }
         const std::filesystem::path test_path = GetConfigFilePath(source_path, format);
-        if (exists(test_path))
+        if (fio->_FileOrDirectoryExists(test_path.string().c_str()))
         {
             return FindConfigResult{
                 format,
@@ -148,7 +148,7 @@ std::optional<Data> LoadConfig(const std::filesystem::path &file_path)
     switch (format)
     {
     case Toml: {
-        return ToConfig(toml::parse_file(path.string()));
+        return ToConfig(toml::parse_file(fio->ConvertPathResource(path.string().c_str())));
     }
     case Ini: {
         const std::string path_str = path.string();

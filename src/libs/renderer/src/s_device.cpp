@@ -24,6 +24,15 @@
 #include <corecrt_io.h>
 #else
 #include <unistd.h>
+
+// replaces D3DX for loading raw images (PNG, JPEG, Targa, BMP) on other platforms
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_NO_STDIO
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_TGA
+#define STBI_ONLY_BMP
+#include "third_party/stb_image.h"
 #endif
 
 CREATE_SERVICE(DX9RENDER)
@@ -1447,6 +1456,7 @@ bool DX9RENDER::TextureLoad(int32_t t)
 
     auto lTexture = std::string(Textures[t].name);
     std::transform(lTexture.begin(), lTexture.end(), lTexture.begin(), [](unsigned char c) { return std::tolower(c); });
+    std::replace(lTexture.begin(), lTexture.end(), '/', '\\');
     auto has_resource_prefix = starts_with(lTexture, "resource\\textures\\");
     auto has_tx_postfix = ends_with(lTexture, ".tx");
 
@@ -1468,7 +1478,7 @@ bool DX9RENDER::TextureLoad(int32_t t)
         // try to load without '.tx' (e.g. raw Targa)
         std::filesystem::path path_to_tex{fn};
         path_to_tex.replace_extension();
-        if (exists(path_to_tex))
+        if (fio->_FileOrDirectoryExists(path_to_tex.string().c_str()))
         {
             return TextureLoadUsingD3DX(path_to_tex.string().c_str(), t);
         }
@@ -1801,7 +1811,60 @@ bool DX9RENDER::TextureLoadUsingD3DX(const char* path, int32_t t)
 
     return true;
 #else
-    return false;
+    char *data = nullptr;
+    uint32_t size = 0;
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    stbi_uc *pixels = nullptr;
+    if (fio->LoadFile(path, &data, &size))
+    {
+        pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc *>(data), static_cast<int>(size), &width, &height,
+                                       &channels, 4);
+    }
+    delete[] data;
+
+    IDirect3DTexture9 *pTex = nullptr;
+    if (!pixels || CHECKD3DERR(d3d9->CreateTexture(width, height, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &pTex, nullptr)))
+    {
+        if (!pixels)
+        {
+            core.Trace("Can't decode texture %s: %s", path, stbi_failure_reason());
+        }
+        stbi_image_free(pixels);
+        delete Textures[t].name;
+        Textures[t].name = nullptr;
+        return false;
+    }
+
+    D3DLOCKED_RECT rect;
+    if (CHECKD3DERR(pTex->LockRect(0, &rect, nullptr, 0)) == false)
+    {
+        // RGBA from stb_image -> BGRA (D3DFMT_A8R8G8B8)
+        for (int y = 0; y < height; y++)
+        {
+            const stbi_uc *src = pixels + static_cast<size_t>(y) * width * 4;
+            auto *dst = static_cast<uint8_t *>(rect.pBits) + static_cast<size_t>(y) * rect.Pitch;
+            for (int x = 0; x < width; x++, src += 4, dst += 4)
+            {
+                dst[0] = src[2];
+                dst[1] = src[1];
+                dst[2] = src[0];
+                dst[3] = src[3];
+            }
+        }
+        pTex->UnlockRect(0);
+    }
+    stbi_image_free(pixels);
+
+    Textures[t].hash = 0;
+    Textures[t].ref = 1;
+    Textures[t].d3dtex = pTex;
+    Textures[t].isCubeMap = false;
+    Textures[t].dwSize = width * height * 4;
+    Textures[t].loaded = true;
+
+    return true;
 #endif
 }
 

@@ -74,8 +74,9 @@ ninja -C build dependencies && ninja -C build
 1. [x] Слияние с PiratesAhoy, режим без Conan, sse2neon, CMake для macOS/iOS.
    Проверено только в Linux-контейнере: Linux-сборка, все исходники проходят `clang --target=aarch64`,
    движок совместим с заголовками DXVK-форка, патч DXVK применяется и собирается.
-   **На macOS ещё ни разу не собиралось** — первые ошибки сборки ожидаемы.
-2. [ ] Собрать и запустить на macOS, получить главное меню.
+   На macOS собирается (`macos-debug`, Apple clang 21, CMake 4, хватает Command Line Tools без Xcode);
+   без данных игры движок стартует, грузит DXVK/MoltenVK/SDL2 из своей папки и показывает окно ошибки.
+2. [ ] Запустить на macOS с данными BNH, получить главное меню.
 3. [x] Шейдеры для не-Windows. На Windows `.fx` компилируются D3DX Effects, на остальных платформах
    `CTechnique` сам разбирает `.fx` и грузит предкомпилированный байткод `<fx>_<функция>.vso/.pso`
    (`GetShaderBinPath`), константы C++ передаёт напрямую в регистры (`#else` ветки рядом с `#ifdef _WIN32 // Effects`).

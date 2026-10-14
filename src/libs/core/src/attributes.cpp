@@ -1,6 +1,5 @@
 #include "attributes.h"
 
-#include <execution>
 
 #include "string_compare.hpp"
 
@@ -446,7 +445,7 @@ VSTRING_CODEC & ATTRIBUTES::GetStringCodec() const noexcept
 void ATTRIBUTES::Sort(
     const std::function<bool(const std::unique_ptr<ATTRIBUTES> &, const std::unique_ptr<ATTRIBUTES> &)>& pred)
 {
-    std::sort(std::execution::seq, std::begin(attributes_), std::end(attributes_), pred);
+    std::sort(std::begin(attributes_), std::end(attributes_), pred);
 }
 
 ATTRIBUTES * ATTRIBUTES::CreateNewAttribute(uint32_t name_code)

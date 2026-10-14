@@ -201,6 +201,11 @@ macro(STORM_SETUP)
     message(FATAL_ERROR "[StormSetup] 'TYPE' is incorrect!")
   endif()
 
+  # D3D9 headers come from the DXVK sources, which are only downloaded at build time
+  if(APPLE AND TARGET dependencies)
+    add_dependencies("${_SETUP_TARGET_NAME}" dependencies)
+  endif()
+
   if(_SETUP_HAS_TESTSUITE AND STORM_BUILD_TESTS)
     set(test_target "${_SETUP_TARGET_NAME}-test")
 

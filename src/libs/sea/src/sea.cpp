@@ -1473,8 +1473,12 @@ void SEA::Realize(uint32_t dwDeltaTime)
         PrepareIndicesForBlock(i);
     }
 
+#ifdef __cpp_lib_execution
     std::for_each(std::execution::par_unseq, std::begin(aBlocks), std::end(aBlocks),
                   [this](auto &i) { SSE_WaveXZBlock(i); });
+#else // libc++ has no parallel algorithms
+    std::for_each(std::begin(aBlocks), std::end(aBlocks), [this](auto &i) { SSE_WaveXZBlock(i); });
+#endif
 
     if (iVStart && iTStart)
         memcpy(pVSea2, pVSea, iVStart * sizeof(SeaVertex));

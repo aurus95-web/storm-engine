@@ -5263,7 +5263,7 @@ void Character::FindNearCharacters(MESSAGE &message)
         num->Set(0);
         return;
     }
-    num->Set(n);
+    num->Set(static_cast<int32_t>(n));
     if (!n)
         return;
     if (n > static_cast<int32_t>(array->GetElementsNum()))

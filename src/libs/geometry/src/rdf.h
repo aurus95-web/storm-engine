@@ -12,6 +12,7 @@ geometry file format
 
 #pragma pack(push, 1)
 
+#include <cstddef>
 #include <cstdint>
 
 #include "c_vector.h"

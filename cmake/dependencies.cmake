@@ -26,6 +26,12 @@ file(WRITE ${STORM_WATERMARK_FILE} "#pragma once\n#define STORM_BUILD_WATERMARK 
 set(FETCHCONTENT_QUIET OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# CMake 4 rejects projects that still declare cmake_minimum_required() below 3.5
+# (nlohmann_json 3.11.2 and others); older CMake versions ignore this variable
+if (NOT DEFINED CMAKE_POLICY_VERSION_MINIMUM)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+endif()
+
 macro(storm_fetch name repository tag)
     FetchContent_Declare(${name}
         GIT_REPOSITORY ${repository}
@@ -78,6 +84,12 @@ storm_fetch(imgui https://github.com/ocornut/imgui.git v1.90-docking)
 # imgui has no CMakeLists.txt, so it is only downloaded here
 FetchContent_MakeAvailable(fmt spdlog fast_float tomlplusplus nlohmann_json cli11 gsl imgui)
 
+# fmt 10 compile-time format string checks are rejected by Clang 20+ ("call to consteval
+# function ... is not a constant expression"), fall back to checking them at runtime
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 20)
+    target_compile_definitions(fmt PUBLIC FMT_CONSTEVAL=)
+endif()
+
 add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_demo.cpp
@@ -119,6 +131,8 @@ if (STORM_FETCH_SDL)
     endif()
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+    # the engine and DXVK (via dlopen) have to load the same SDL2 library in every configuration
+    set(SDL_CMAKE_DEBUG_POSTFIX "" CACHE STRING "" FORCE)
     storm_fetch(sdl2 https://github.com/libsdl-org/SDL.git release-2.32.2)
     FetchContent_MakeAvailable(sdl2)
 

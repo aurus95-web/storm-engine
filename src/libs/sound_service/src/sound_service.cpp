@@ -1176,7 +1176,7 @@ void SoundService::ShowEditor(bool &active)
         ImGui::TextFmt("position  {:.2f}, {:.2f}, {:.2f}, forward {:.2f}, {:.2f}, {:.2f}, up {:.2f}, {:.2f}, {:.2f}",
                        lpos.x, lpos.y, lpos.z, lforward.x, lforward.y, lforward.z, lup.x, lup.y, lup.z);
 
-        auto text = std::format("There are currently {} sound aliases", Aliases.size());
+        auto text = fmt::format("There are currently {} sound aliases", Aliases.size());
         ImGui::Text(text.c_str());
 
         constexpr auto invalid_selection = std::numeric_limits<uint16_t>::max();

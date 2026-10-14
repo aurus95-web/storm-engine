@@ -23,10 +23,11 @@
 #define _tsystem std::system
 #endif
 
+#include "storm/engine_settings.hpp"
+
 #ifdef _WIN32
 #include "logging.hpp"
 #include "seh_extractor.hpp"
-#include "storm/engine_settings.hpp"
 #endif
 
 namespace
@@ -51,6 +52,7 @@ auto assembleArchiveCmd()
 }
 #endif
 
+#ifdef STORM_USE_SENTRY
 void log_sentry(sentry_level_t level, const char *message, va_list args, void *)
 {
     // TODO:
@@ -80,6 +82,7 @@ void log_sentry(sentry_level_t level, const char *message, va_list args, void *)
         spdlog::log(log_level, text);
     }*/
 }
+#endif
 
 }
 
@@ -194,6 +197,10 @@ LifecycleDiagnosticsService::Guard LifecycleDiagnosticsService::initialize(const
 
     if (!initialized_)
     {
+#ifndef STORM_USE_SENTRY
+        // crash reporting is not available in this build, only logging is used
+        initialized_ = true;
+#else
         // TODO: make this crossplatform
         auto *options = sentry_options_new();
 #ifdef _DEBUG
@@ -213,6 +220,7 @@ LifecycleDiagnosticsService::Guard LifecycleDiagnosticsService::initialize(const
         sentry_options_set_system_crash_reporter_enabled(options, enableCrashReports);
 
         initialized_ = sentry_init(options) == 0;
+#endif
     }
 
     return Guard(*this);
@@ -222,10 +230,12 @@ void LifecycleDiagnosticsService::terminate() const
 {
     loggingService_->terminate();
 
+#ifdef STORM_USE_SENTRY
     if (initialized_)
     {
         sentry_close();
     }
+#endif
 }
 
 void LifecycleDiagnosticsService::notifyAfterRun() const
@@ -245,6 +255,7 @@ void LifecycleDiagnosticsService::setCrashInfoCollector(crash_info_collector f)
     collectCrashInfo_ = std::move(f);
 }
 
+#ifdef STORM_USE_SENTRY
 sentry_value_t LifecycleDiagnosticsService::beforeCrash(const sentry_ucontext_t *uctx, sentry_value_t event,
                                                         void *closure)
 {
@@ -279,5 +290,6 @@ sentry_value_t LifecycleDiagnosticsService::beforeCrash(const sentry_ucontext_t 
 
     return event;
 }
+#endif
 
 } // namespace storm::diag

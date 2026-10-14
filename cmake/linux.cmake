@@ -1,9 +1,13 @@
-if(STORM_USE_CONAN_SDL)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsigned-char")
+
+# without Conan SDL2 is set up in dependencies.cmake
+if(NOT STORM_USE_CONAN)
+elseif(STORM_USE_CONAN_SDL)
     set(SDL2_LIBRARIES "sdl")
 else()
     find_package(SDL2 REQUIRED)
     message(STATUS "SDL2_LIBRARIES="${SDL2_LIBRARIES})
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${SDL2_INCLUDE_DIRS} -fsigned-char")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${SDL2_INCLUDE_DIRS}")
     message(STATUS "CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS})
 endif()
 

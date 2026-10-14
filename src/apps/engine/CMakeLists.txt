@@ -12,7 +12,7 @@ set(SYSTEM_DEPS
     "dbghelp"
     "winhttp"
 )
-else()
+elseif (NOT APPLE)
 set(SYSTEM_DEPS "ffi")
 endif()
 

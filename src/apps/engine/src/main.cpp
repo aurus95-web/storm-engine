@@ -1,8 +1,10 @@
 #include <thread>
 
 #include <SDL2/SDL.h>
+#ifdef STORM_USE_MIMALLOC
 #include <mimalloc-new-delete.h>
 #include <mimalloc.h>
+#endif
 #include <spdlog/spdlog.h>
 #include <CLI/CLI.hpp>
 
@@ -58,6 +60,7 @@ void RunFrameWithOverflowCheck()
 #define RunFrameWithOverflowCheck RunFrame
 #endif
 
+#ifdef STORM_USE_MIMALLOC
 void mimalloc_fun(const char *msg, void *arg)
 {
     static std::filesystem::path mimalloc_log_path;
@@ -80,6 +83,7 @@ void mimalloc_fun(const char *msg, void *arg)
         fclose(mimalloc_log);
     }
 }
+#endif
 
 } // namespace
 
@@ -146,6 +150,7 @@ int main(int argc, char *argv[])
         return EXIT_SUCCESS;
     }
 #endif
+#ifdef STORM_USE_MIMALLOC
     mi_register_output(mimalloc_fun, nullptr);
     mi_option_set(mi_option_show_errors, 1);
     mi_option_set(mi_option_show_stats, 0);
@@ -159,6 +164,7 @@ int main(int argc, char *argv[])
 #ifdef _DEBUG
     mi_option_set(mi_option_verbose, 4);
 #endif
+#endif // STORM_USE_MIMALLOC
 
     SDL_InitSubSystem(SDL_INIT_EVENTS | SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);
 
@@ -192,7 +198,9 @@ int main(int argc, char *argv[])
     // Init logging
     spdlog::set_default_logger(storm::logging::getOrCreateLogger(defaultLoggerName));
     spdlog::info("Logging system initialized. Running on {}", STORM_BUILD_WATERMARK_STRING);
+#ifdef STORM_USE_MIMALLOC
     spdlog::info("mimalloc-redirect status: {}", mi_is_redirected());
+#endif
 
     // Init core
     core_private = static_cast<CorePrivate *>(&core);
@@ -279,11 +287,13 @@ int main(int argc, char *argv[])
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
 
+#ifdef STORM_USE_MIMALLOC
         if (core.Controls && core.Controls->GetDebugAsyncKeyState(VK_F1) && core.Controls->GetDebugAsyncKeyState(VK_SHIFT))
         {
             mi_stats_print_out(mimalloc_fun, nullptr);
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
+#endif
     }
 
     // Release
@@ -292,7 +302,7 @@ int main(int argc, char *argv[])
     core_private->ReleaseBase();
 #ifdef _WIN32 // FIX_LINUX Cursor
     ClipCursor(nullptr);
-#elif _DEBUG
+#elif defined(_DEBUG) && defined(STORM_USE_MIMALLOC)
     mi_option_set(mi_option_verbose, 0); // disable statistics writing in Linux
 #endif
     SDL_Quit();

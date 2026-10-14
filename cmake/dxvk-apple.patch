@@ -1,5 +1,26 @@
+diff --git a/src/dxso/dxso_compiler.cpp b/src/dxso/dxso_compiler.cpp
+index d4df654d..0f20803d 100644
+--- a/src/dxso/dxso_compiler.cpp
++++ b/src/dxso/dxso_compiler.cpp
+@@ -2848,8 +2848,14 @@ void DxsoCompiler::emitControlFlowGenericLoop(
+     }
+ 
+     // SM < 1.x does not have dcl sampler type.
+-    if (m_programInfo.majorVersion() < 2 && m_samplers[samplerIdx].color[SamplerTypeTexture2D].varId == 0)
+-      emitDclSampler(samplerIdx, DxsoTextureType::Texture2D);
++    // Without sampler type spec constants (MoltenVK) every sampler would be 2D, but the
++    // texm3x3 spec/vspec/tex reflection lookups are meant for cube environment maps.
++    if (m_programInfo.majorVersion() < 2 && m_samplers[samplerIdx].color[SamplerTypeTexture2D].varId == 0
++     && m_samplers[samplerIdx].color[SamplerTypeTextureCube].varId == 0) {
++      const bool cube = opcode == DxsoOpcode::TexM3x3Spec || opcode == DxsoOpcode::TexM3x3VSpec
++                     || opcode == DxsoOpcode::TexM3x3Tex;
++      emitDclSampler(samplerIdx, cube ? DxsoTextureType::TextureCube : DxsoTextureType::Texture2D);
++    }
+ 
+     DxsoSampler sampler = m_samplers.at(samplerIdx);
+ 
 diff --git a/src/vulkan/vulkan_loader.cpp b/src/vulkan/vulkan_loader.cpp
-index 518efcb..de5bc87 100644
+index 518efcb1..de5bc879 100644
 --- a/src/vulkan/vulkan_loader.cpp
 +++ b/src/vulkan/vulkan_loader.cpp
 @@ -18,10 +18,14 @@ namespace dxvk::vk {
@@ -20,7 +41,7 @@ index 518efcb..de5bc87 100644
  #else
      static const std::array<const char*, 2> dllNames = {{
 diff --git a/src/wsi/sdl2/wsi_platform_sdl2.cpp b/src/wsi/sdl2/wsi_platform_sdl2.cpp
-index 203cb6d..5329d4e 100644
+index 203cb6d9..5329d4ee 100644
 --- a/src/wsi/sdl2/wsi_platform_sdl2.cpp
 +++ b/src/wsi/sdl2/wsi_platform_sdl2.cpp
 @@ -10,15 +10,26 @@
@@ -53,7 +74,7 @@ index 203cb6d..5329d4e 100644
        throw DxvkError("SDL2 WSI: Failed to load SDL2 DLL.");
  
 diff --git a/src/wsi/sdl2/wsi_platform_sdl2_funcs.h b/src/wsi/sdl2/wsi_platform_sdl2_funcs.h
-index 4396a6b..a9b77af 100644
+index 4396a6bb..a9b77aff 100644
 --- a/src/wsi/sdl2/wsi_platform_sdl2_funcs.h
 +++ b/src/wsi/sdl2/wsi_platform_sdl2_funcs.h
 @@ -11,6 +11,7 @@ SDL_PROC(int, SDL_SetWindowFullscreen, (SDL_Window*, Uint32))
@@ -65,7 +86,7 @@ index 4396a6b..a9b77af 100644
  SDL_PROC(SDL_bool, SDL_Vulkan_GetInstanceExtensions, (SDL_Window*, unsigned int*, const char**))
  SDL_PROC(int, SDL_Vulkan_LoadLibrary, (const char*))
 diff --git a/src/wsi/sdl2/wsi_window_sdl2.cpp b/src/wsi/sdl2/wsi_window_sdl2.cpp
-index e0c48fd..a0bb896 100644
+index e0c48fdc..a0bb8963 100644
 --- a/src/wsi/sdl2/wsi_window_sdl2.cpp
 +++ b/src/wsi/sdl2/wsi_window_sdl2.cpp
 @@ -20,7 +20,9 @@ namespace dxvk::wsi {

@@ -204,7 +204,13 @@ bool SEA::Init()
 
     SFLB_CreateBuffers();
 
+#ifdef __APPLE__
+    // DXVK on MoltenVK has no sampler type spec constants and samples ps_1_x "tex" lookups as 2D,
+    // so the bump volume texture reads garbage (flat sea). Without it the animated 2D bump map is used.
+    pVolumeTexture = nullptr;
+#else
     pVolumeTexture = rs->CreateVolumeTexture(XWIDTH, YWIDTH, FRAMES, 4, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED);
+#endif
     /*pAnimTexture = rs->CreateAnimationTexture(pVolumeTexture, _FL_);
     pAnimTexture->SetAnimSpeed(20.0f);*/
 

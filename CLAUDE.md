@@ -81,8 +81,18 @@ ninja -C build dependencies && ninja -C build
    (dylib ищутся рядом с бинарником). Из `resource/` движка в игру нужны только `*.vso`/`*.pso`:
    остальные файлы у BNH те же (отличаются переводами строк). Картинки `.png/.jpg/.tga` вне Windows
    грузит stb_image (`TextureLoadUsingD3DX`). Язык выбирается в игре (Options → Language), `language.ini` не влияет.
-   Осталось: техники `particles_inv` (`texture | complement`) и `wdmseadraw4` (`subtract`) не разбираются,
-   звук (FMOD), проверить саму игру (море, локации, карта мира).
+   Море, отражения, облака карты мира проверены по официальным скриншотам BNH (itch.io).
+   Осталось: звук (FMOD), ролики (WMV — нет декодера на Apple, план: перекодировать в H.264 + AVFoundation).
+   Управление: меню F1, быстрое сохранение/загрузка F5/F6 (на Mac — fn+F…), F10 — отладочное меню.
+   Ошибки рендера, найденные в игре, и их причины:
+   - DXVK-форк без spec-констант типа сэмплера (MoltenVK) объявляет все сэмплеры ps_1_x как 2D.
+     В `cmake/dxvk-apple.patch` для `texm3x3spec/vspec/tex` сэмплер объявляется кубическим
+     (отражения моря), а объёмная bump-текстура моря на Apple отключена (`SEA::Init`, рябь).
+     Новые ps_1_x шейдеры с 3D/кубическими текстурами через `tex` будут читаться как 2D.
+   - Самописные `.vso/.pso` сверять с HLSL построчно: `worldmap_main.vso` терял `normalize`
+     (облака карты), теперь генерируется `tools/shader-bins/worldmap_shaders.py`.
+   - Скриншот окна игры: `screencapture -x -o -l <CGWindowID>`; ID окна 1024×768 процесса `engine`
+     через `CGWindowListCopyWindowInfo` (у процесса несколько окон, нужно взять окно игры).
 3. [x] Шейдеры для не-Windows. На Windows `.fx` компилируются D3DX Effects, на остальных платформах
    `CTechnique` сам разбирает `.fx` и грузит предкомпилированный байткод `<fx>_<функция>.vso/.pso`
    (`GetShaderBinPath`), константы C++ передаёт напрямую в регистры (`#else` ветки рядом с `#ifdef _WIN32 // Effects`).

@@ -76,7 +76,13 @@ ninja -C build dependencies && ninja -C build
    движок совместим с заголовками DXVK-форка, патч DXVK применяется и собирается.
    На macOS собирается (`macos-debug`, Apple clang 21, CMake 4, хватает Command Line Tools без Xcode);
    без данных игры движок стартует, грузит DXVK/MoltenVK/SDL2 из своей папки и показывает окно ошибки.
-2. [ ] Запустить на macOS с данными BNH, получить главное меню.
+2. [x] Запустить на macOS с данными BNH, получить главное меню — работает (фон, кнопки, текст).
+   Можно не копировать `engine` в папку игры: `cd <BNH> && <repo>/build/macos/Debug/engine`
+   (dylib ищутся рядом с бинарником). Из `resource/` движка в игру нужны только `*.vso`/`*.pso`:
+   остальные файлы у BNH те же (отличаются переводами строк). Картинки `.png/.jpg/.tga` вне Windows
+   грузит stb_image (`TextureLoadUsingD3DX`). Язык выбирается в игре (Options → Language), `language.ini` не влияет.
+   Осталось: техники `particles_inv` (`texture | complement`) и `wdmseadraw4` (`subtract`) не разбираются,
+   звук (FMOD), проверить саму игру (море, локации, карта мира).
 3. [x] Шейдеры для не-Windows. На Windows `.fx` компилируются D3DX Effects, на остальных платформах
    `CTechnique` сам разбирает `.fx` и грузит предкомпилированный байткод `<fx>_<функция>.vso/.pso`
    (`GetShaderBinPath`), константы C++ передаёт напрямую в регистры (`#else` ветки рядом с `#ifdef _WIN32 // Effects`).

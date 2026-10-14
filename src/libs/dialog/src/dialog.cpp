@@ -45,7 +45,7 @@ inline void SetVerticesForSquare(XI_TEX_VERTEX *pV, FRECT uv, float left, float 
 
     pV[3].pos.x = right;
     pV[3].pos.y = bottom;
-    pV[2].pos.z = 1.f;
+    pV[3].pos.z = 1.f;
     pV[3].rhw = 0.5f;
     pV[3].color = 0xFFFFFFFF;
     pV[3].u = uv.right;
@@ -585,10 +585,10 @@ bool DIALOG::Init()
     core.SetTimeScale(0.f);
     unfadeTime = 0;
 
-    RenderService = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    RenderService = core.GetServiceX<VDX9RENDER>();
     Assert(RenderService);
 
-    snd = static_cast<VSoundService *>(core.GetService("SoundService"));
+    snd = core.GetServiceX<VSoundService>();
     // Assert( snd );
 
     //----------------------------------------------------------
@@ -732,7 +732,7 @@ void DIALOG::Realize(uint32_t Delta_Time)
     {
         // play click of the pressed key
         if (snd)
-            snd->SoundPlay(TICK_SOUND, PCM_STEREO, VOLUME_FX);
+            snd->SoundPlay(DEFAULT_TICK_SOUND, PCM_STEREO, VOLUME_FX);
 
         if (m_DlgText.IsLastPage())
         {
@@ -748,7 +748,7 @@ void DIALOG::Realize(uint32_t Delta_Time)
     {
         // play click of the pressed key
         if (snd)
-            snd->SoundPlay(TICK_SOUND, PCM_STEREO, VOLUME_FX);
+            snd->SoundPlay(DEFAULT_TICK_SOUND, PCM_STEREO, VOLUME_FX);
 
         if (m_DlgText.IsLastPage())
         {
@@ -764,7 +764,7 @@ void DIALOG::Realize(uint32_t Delta_Time)
     if (cs.state == CST_ACTIVATED)
     {
         if (snd)
-            snd->SoundPlay(TICK_SOUND, PCM_STEREO, VOLUME_FX);
+            snd->SoundPlay(DEFAULT_TICK_SOUND, PCM_STEREO, VOLUME_FX);
         if (m_DlgText.currentLine_ > 0)
         {
             m_DlgText.PrevPage();
@@ -778,7 +778,7 @@ void DIALOG::Realize(uint32_t Delta_Time)
     if (cs.state == CST_ACTIVATED)
     {
         if (snd)
-            snd->SoundPlay(TICK_SOUND, PCM_STEREO, VOLUME_FX);
+            snd->SoundPlay(DEFAULT_TICK_SOUND, PCM_STEREO, VOLUME_FX);
         if (!m_DlgText.IsLastPage())
         {
             m_DlgText.NextPage();
@@ -799,7 +799,7 @@ void DIALOG::Realize(uint32_t Delta_Time)
     {
         // play click of the pressed key
         if (snd)
-            snd->SoundPlay(TICK_SOUND, PCM_STEREO, VOLUME_FX);
+            snd->SoundPlay(DEFAULT_TICK_SOUND, PCM_STEREO, VOLUME_FX);
 
         if (m_DlgText.IsLastPage())
         {

@@ -7,7 +7,7 @@
 #include "geometry.h"
 #include "model.h"
 
-class NODER : public NODE
+class NODER final : public NODE
 {
     std::string sys_modelName_base;
     std::string sys_modelName_full;
@@ -67,40 +67,13 @@ class NODER : public NODE
 
     void SetMaxViewDist(float fDist);
 
+    void ShowEditorTree();
 };
 
 #define MODEL_ANI_MAXBUFFERS 16
 
-class MODELR : public MODEL
+class MODELR final : public MODEL
 {
-    std::string LightPath, lmPath;
-
-    struct ANIBUFFER
-    {
-        FVF_VERTEX *v;
-        int32_t num;
-        int32_t vb;
-    };
-
-    VDX9RENDER *rs;
-    VGEOMETRY *GeometyService;
-    Animation *ani;
-    float aniPos[ANI_MAX_ACTIONS];
-
-    bool bSetupFog;
-    bool bFogEnable;
-    float fFogDensity;
-
-    int32_t nAniVerts;
-
-    ANIBUFFER aniVerts[MODEL_ANI_MAXBUFFERS];
-    void AniRender();
-    NODE *colideNode;
-    void FindPlanes(const CMatrix &view, const CMatrix &proj);
-    IDirect3DVertexBuffer9 *d3dDestVB;
-
-    unsigned short *idxBuff;
-
   public:
     NODER *root;
 
@@ -143,7 +116,37 @@ class MODELR : public MODEL
 
     NODE *GetCollideNode() override;
 
-  protected:
+    void ShowEditor() override;
+
+  private:
+    std::string LightPath, lmPath;
+
+    struct ANIBUFFER
+    {
+        FVF_VERTEX *v;
+        int32_t num;
+        int32_t vb;
+    };
+
+    VDX9RENDER *rs;
+    VGEOMETRY *GeometyService;
+    Animation *ani;
+    float aniPos[ANI_MAX_ACTIONS];
+
+    bool bSetupFog;
+    bool bFogEnable;
+    float fFogDensity;
+
+    int32_t nAniVerts;
+
+    ANIBUFFER aniVerts[MODEL_ANI_MAXBUFFERS];
+    void AniRender();
+    NODE *colideNode;
+    void FindPlanes(const CMatrix &view, const CMatrix &proj);
+    IDirect3DVertexBuffer9 *d3dDestVB;
+
+    unsigned short *idxBuff;
+
     bool useBlend;
     uint32_t blendTime, passedTime;
     std::string blendTechnique;

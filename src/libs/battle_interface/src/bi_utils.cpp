@@ -336,7 +336,7 @@ void BITextInfo::Init(VDX9RENDER *rs, ATTRIBUTES *pA)
     if (!pRS || !pA)
         return;
 
-    nFont = pRS->LoadFont(pA->GetAttribute("font"));
+    nFont = pRS->LoadFont(to_string(pA->GetAttribute("font")));
     fScale = pA->GetAttributeAsFloat("scale", 1.f);
     dwColor = pA->GetAttributeAsDword("color", 0xFFFFFFFF);
     bShadow = pA->GetAttributeAsDword("shadow", 1) != 0;

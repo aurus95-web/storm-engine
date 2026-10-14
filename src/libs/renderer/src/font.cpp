@@ -153,9 +153,14 @@ bool FONT::Init(const char *font_name, const char *iniName)
             charDescriptors_[codepoint].Tuv.x1 + static_cast<float>(ltmp - 1.f) / static_cast<float>(textureSizeX_);
         if (!MakeLong(&pData, &ltmp))
             throw std::runtime_error("invalid font record");
-        charDescriptors_[codepoint].Pos.y1 =
-            static_cast<float>(height_ - static_cast<int32_t>(ltmp * verticalAspectRatio_));
-        charDescriptors_[codepoint].Pos.y2 = static_cast<float>(height_); //((int32_t)(ltmp*m_fAspectRatioV));
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN) {
+            charDescriptors_[codepoint].Pos.y2 = static_cast<float>(ltmp*verticalAspectRatio_);
+        }
+        else {
+            charDescriptors_[codepoint].Pos.y1 =
+                static_cast<float>(height_ - static_cast<int32_t>(ltmp * verticalAspectRatio_));
+            charDescriptors_[codepoint].Pos.y2 = static_cast<float>(height_);
+        }
         charDescriptors_[codepoint].Tuv.y2 =
             charDescriptors_[codepoint].Tuv.y1 + static_cast<float>(ltmp - 1.f) / static_cast<float>(textureSizeY_);
     }
@@ -192,14 +197,15 @@ void OffsetFRect(FLOAT_RECT &fr, float dx, float dy)
     fr.y2 += dy;
 }
 
-int32_t FONT::GetStringWidth(const std::string_view &text, std::optional<float> scale_override) const
+size_t FONT::GetStringWidth(const std::string_view &text,
+                                            const storm::FontPrintOverrides &overrides) const
 {
     if (text.empty())
         return 0;
     float xoffset = 0;
     const int32_t s_num = text.size();
 
-    const float scale = scale_override.value_or(scale_);
+    const float scale = overrides.scale.value_or(scale_);
 
     for (int32_t i = 0; i < s_num; i += utf8::u8_inc(text.data() + i))
     {
@@ -230,7 +236,7 @@ int32_t FONT::GetStringWidth(const std::string_view &text, std::optional<float> 
     return static_cast<int32_t>(xoffset);
 }
 
-int32_t FONT::UpdateVertexBuffer(int32_t x, int32_t y, char *data_PTR, int utf8length, float scale, uint32_t color)
+int32_t FONT::UpdateVertexBuffer(int32_t x, int32_t y, const char *data_PTR, int utf8length, float scale, uint32_t color)
 {
     int32_t s_num;
     int32_t n;
@@ -319,14 +325,18 @@ int32_t FONT::UpdateVertexBuffer(int32_t x, int32_t y, char *data_PTR, int utf8l
     return static_cast<int32_t>(xoffset);
 }
 
-int32_t FONT::Print(int32_t x, int32_t y, char *data_PTR, const FONT_PRINT_OVERRIDES &overrides)
+std::optional<size_t> FONT::Print(float x, float y, const std::string_view &text,
+                            const storm::FontPrintOverrides &overrides)
 {
-    if (data_PTR == nullptr || techniqueName_.empty())
+    if (text.empty())
         return 0;
     auto xoffset = 0L;
-    int32_t s_num = utf8::Utf8StringLength(data_PTR);
+    int32_t s_num = utf8::Utf8StringLength(text);
     if (s_num == 0)
         return 0;
+
+    const auto str = std::string(text);
+    const char *data_PTR = str.c_str();
 
     const auto bDraw = renderService_.TechniqueExecuteStart(techniqueName_.c_str());
     if (!bDraw)
@@ -342,14 +352,14 @@ int32_t FONT::Print(int32_t x, int32_t y, char *data_PTR, const FONT_PRINT_OVERR
     const uint32_t color = overrides.color.value_or(color_);
     if (drawShadows)
     {
-        UpdateVertexBuffer(x + shadowOffsetX_, y + shadowOffsetY_, data_PTR, s_num, scale, color);
+        UpdateVertexBuffer(static_cast<int32_t>(x) + shadowOffsetX_, static_cast<int32_t>(y) + shadowOffsetY_, data_PTR, s_num, scale, color);
 
         device_.SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ZERO);
         device_.SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
 
         device_.DrawPrimitive(D3DPT_TRIANGLELIST, 0, s_num * 2);
     }
-    xoffset = UpdateVertexBuffer(x, y, data_PTR, s_num, scale, color);
+    xoffset = UpdateVertexBuffer(static_cast<int32_t>(x), static_cast<int32_t>(y), data_PTR, s_num, scale, color);
     device_.SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     device_.SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     device_.DrawPrimitive(D3DPT_TRIANGLELIST, 0, s_num * 2);

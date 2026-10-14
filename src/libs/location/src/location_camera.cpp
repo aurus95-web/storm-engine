@@ -18,6 +18,8 @@
 #include "sea_base.h"
 #include "shared/messages.h"
 
+#include <storm/renderer/scene.hpp>
+
 //#define CAMERA_VIEW_TEST_ENABLE
 #define CAMERA_VIEW_TEST_R 3
 #define CAMERA_VIEW_TEST_ANG 30
@@ -83,18 +85,15 @@ LocationCamera::~LocationCamera()
 // Initialization
 bool LocationCamera::Init()
 {
-    // DX9 render
-    rs = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
-    if (!rs)
-        throw std::runtime_error("No service: dx9render");
-
     // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
-    core.AddToLayer(EXECUTE, GetId(), 0);
 
     // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
-    core.AddToLayer(REALIZE, GetId(), 100000);
+
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::TO_EACH_HIS_OWN) {
+        storm::Scene::GetDefaultScene().SetActiveCamera(this);
+    }
 
     // The sea
     sea = core.GetEntityId("sea");
@@ -102,20 +101,22 @@ bool LocationCamera::Init()
     // try to get the location
     loc = core.GetEntityId("location");
 
-    rs->SetPerspective(cameraPerspective);
+    GetRenderer().SetPerspective(cameraPerspective);
     // rs->SetPerspective(1.0f);
 
     StoreRestoreDynamicFov(false);
+
+    SetActive(true);
 
     return true;
 }
 
 // Execution
-#ifndef LOCATIONCAMERA_DEBUG
-void LocationCamera::Execute(uint32_t delta_time)
-#else
-void LocationCamera::Realize(uint32_t delta_time)
-#endif
+// #ifndef LOCATIONCAMERA_DEBUG
+void LocationCamera::Execute(uint32_t real_delta)
+// #else
+// void LocationCamera::Realize(uint32_t)
+// #endif
 {
     if (m_bTrackMode)
     {
@@ -129,7 +130,7 @@ void LocationCamera::Realize(uint32_t delta_time)
     core.Controls->GetControlState("ChrCamSpecMode", cs);
     isSpecialMode = cs.state == CST_ACTIVE;
     // Time period
-    const auto dltTime = delta_time * 0.001f;
+    const auto dltTime = real_delta * 0.001f;
     if (isSleep)
         return;
     if (!Set())
@@ -329,7 +330,7 @@ void LocationCamera::Realize(uint32_t delta_time)
     if (dynamic_fog.isOn)
         ProcessDynamicFov(core.GetDeltaTime() * .001f, realPos, lookTo, vUp);
 
-    rs->SetCamera(realPos, lookTo, vUp);
+    GetRenderer().SetCamera(realPos, lookTo, vUp);
 
 #ifdef CAMERA_VIEW_TEST_ENABLE
     // Set the new camera position
@@ -337,21 +338,21 @@ void LocationCamera::Realize(uint32_t delta_time)
 #endif
 }
 
-#ifndef LOCATIONCAMERA_DEBUG
-void LocationCamera::Realize(uint32_t delta_time)
-#else
-void LocationCamera::Execute(uint32_t delta_time)
-#endif
-{
-    // rs->Print(10, 10, "%f", cf.fndRadius);
-    /*
-    CMatrix mtx;
-    rs->GetTransform(D3DTS_VIEW, mtx);
-    mtx.Transposition();
-    float dst = location->Trace(CVECTOR(mtx.Pos()), CVECTOR(mtx.Pos() + (mtx.Vz()*100.0f)));
-    rs->Print(10, 10, "%f", dst);
-    */
-}
+// #ifndef LOCATIONCAMERA_DEBUG
+// void LocationCamera::Realize(uint32_t delta_time)
+// #else
+// void LocationCamera::Execute(uint32_t delta_time)
+// #endif
+// {
+//     // rs->Print(10, 10, "%f", cf.fndRadius);
+//     /*
+//     CMatrix mtx;
+//     rs->GetTransform(D3DTS_VIEW, mtx);
+//     mtx.Transposition();
+//     float dst = location->Trace(CVECTOR(mtx.Pos()), CVECTOR(mtx.Pos() + (mtx.Vz()*100.0f)));
+//     rs->Print(10, 10, "%f", dst);
+//     */
+// }
 
 // Messages
 uint64_t LocationCamera::ProcessMessage(MESSAGE &message)
@@ -408,7 +409,7 @@ uint64_t LocationCamera::ProcessMessage(MESSAGE &message)
         return 1;
     case MSG_CAMERA_SET_PERSPECTIVE:
         cameraPerspective = message.Float();
-        rs->SetPerspective(cameraPerspective);
+        GetRenderer().SetPerspective(cameraPerspective);
         return 1;
     // internal
     case -1: {
@@ -640,7 +641,7 @@ void LocationCamera::ProcessDynamicFov(float fDeltaTime, const CVECTOR &vFrom, c
         dynamic_fog.fFogTimeCur += fDeltaTime;
     if (dynamic_fog.fFogTimeMax > 0.f && dynamic_fog.fFogTimeCur >= dynamic_fog.fFogTimeMax)
     {
-        rs->SetPerspective(cameraPerspective);
+        GetRenderer().SetPerspective(cameraPerspective);
         dynamic_fog.isOn = false;
     }
     else
@@ -663,7 +664,7 @@ void LocationCamera::ProcessDynamicFov(float fDeltaTime, const CVECTOR &vFrom, c
                 dynamic_fog.bFogUp = true;
             }
         }
-        rs->SetPerspective(dynamic_fog.fCurFov);
+        GetRenderer().SetPerspective(dynamic_fog.fCurFov);
 
         if (dynamic_fog.bAngleUp)
         {
@@ -768,8 +769,8 @@ bool LocationCamera::LoadCameraTrack(const char *pcTrackFile, float fTrackTime)
     view.v.vz = -view.v.vz;
     view.Inverse();
     view.v.pos = view * -pos;
-    rs->SetView(*(CMatrix *)&view);
-    rs->SetPerspective(cameraPerspective);
+    GetRenderer().SetView(*(CMatrix *)&view);
+    GetRenderer().SetPerspective(cameraPerspective);
 
     return true;
 }
@@ -815,8 +816,8 @@ void LocationCamera::ProcessTrackCamera()
     view.v.vz = -view.v.vz;
     view.Inverse();
     view.v.pos = view * -pos;
-    rs->SetView(*(CMatrix *)&view);
-    rs->SetPerspective(cameraPerspective);
+    GetRenderer().SetView(*(CMatrix *)&view);
+    GetRenderer().SetPerspective(cameraPerspective);
 }
 
 float LocationCamera::TrackPauseProcess()

@@ -19,27 +19,35 @@ AIShipCameraController::~AIShipCameraController()
 
 bool AIShipCameraController::Init()
 {
-    pACrosshair = AIHelper::pASeaCameras->GetAttributeClass("Crosshair");
-    Assert(pACrosshair);
-    iCrosshairTex = AIHelper::pRS->TextureCreate(pACrosshair->GetAttribute("Texture"));
-    dwSubTexturesX = pACrosshair->GetAttributeAsDword("SubTexX");
-    dwSubTexturesY = pACrosshair->GetAttributeAsDword("SubTexY");
-    auto *pAColors = pACrosshair->GetAttributeClass("colors");
-    if (pAColors)
+    if (AIHelper::pASeaCameras)
     {
-        Colors[RELATION_UNKNOWN] = pAColors->GetAttributeAsDword("default");
-        Colors[RELATION_ENEMY] = pAColors->GetAttributeAsDword("enemy");
-        Colors[RELATION_FRIEND] = pAColors->GetAttributeAsDword("friend");
-        Colors[RELATION_NEUTRAL] = pAColors->GetAttributeAsDword("neutral");
+        pACrosshair = AIHelper::pASeaCameras->GetAttributeClass("Crosshair");
     }
-    else
-        core.Trace("AIShipCameraController:: Attributes Crosshair.Colors not found!");
+    if (pACrosshair)
+    {
+        iCrosshairTex = AIHelper::pRS->TextureCreate(pACrosshair->GetAttribute("Texture"));
+        dwSubTexturesX = pACrosshair->GetAttributeAsDword("SubTexX");
+        dwSubTexturesY = pACrosshair->GetAttributeAsDword("SubTexY");
+        auto *pAColors = pACrosshair->GetAttributeClass("colors");
+        if (pAColors)
+        {
+            Colors[RELATION_UNKNOWN] = pAColors->GetAttributeAsDword("default");
+            Colors[RELATION_ENEMY] = pAColors->GetAttributeAsDword("enemy");
+            Colors[RELATION_FRIEND] = pAColors->GetAttributeAsDword("friend");
+            Colors[RELATION_NEUTRAL] = pAColors->GetAttributeAsDword("neutral");
+        }
+        else
+            core.Trace("AIShipCameraController:: Attributes Crosshair.Colors not found!");
+    }
     return true;
 }
 
 void AIShipCameraController::Execute(float fDeltaTime)
 {
-    bCameraOutside = pACrosshair->GetAttributeAsDword("OutsideCamera") != 0;
+    if (pACrosshair)
+    {
+        bCameraOutside = pACrosshair->GetAttributeAsDword("OutsideCamera") != 0;
+    }
 
     pTargetAPointer = nullptr;
     dwTarget = RELATION_UNKNOWN;
@@ -159,6 +167,11 @@ void AIShipCameraController::Realize(float fDeltaTime)
     if (isCameraOutside())
         return;
 
+    if (!pACrosshair)
+    {
+        return;
+    }
+
     CMatrix m;
     RS_RECT rCam;
 
@@ -211,5 +224,8 @@ void AIShipCameraController::Load(CSaveLoad *pSL)
     fDelta = pSL->LoadFloat();
     bCameraOutside = pSL->LoadDword() != 0;
 
-    pACrosshair->SetAttributeUseDword("OutsideCamera", bCameraOutside);
+    if (pACrosshair)
+    {
+        pACrosshair->SetAttributeUseDword("OutsideCamera", bCameraOutside);
+    }
 }

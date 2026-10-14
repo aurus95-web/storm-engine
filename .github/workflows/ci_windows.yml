@@ -39,7 +39,7 @@ jobs:
         submodules: 'recursive'
     - uses: ilammy/msvc-dev-cmd@v1
     - name: Install Conan
-      run: pip install conan==1.60.0
+      run: pip install conan==2.12.2
     - uses: lukka/get-cmake@latest
     - name: Configure CMake w/ Conan
       run: |
@@ -55,9 +55,21 @@ jobs:
 #        configurePreset: default
 #        buildPreset: '${{ matrix.configuration }}'
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: storm-engine.${{ matrix.configuration }}
         path: build/default/${{ matrix.configuration }}
+        include-hidden-files: true
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - name: Upload debug symbols
+      if: env.SENTRY_AUTH_TOKEN
+      env:
+        SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      run: |
+        npm install @sentry/cli
+        ./node_modules/.bin/sentry-cli --auth-token ${{ secrets.SENTRY_AUTH_TOKEN }} debug-files upload -o piratesahoy -p storm-engine -t pe -t pdb "build/default/${{ matrix.configuration }}"
 
 permissions: write-all

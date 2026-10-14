@@ -85,7 +85,7 @@ Location::~Location()
 bool Location::Init()
 {
     // DX9 render
-    rs = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    rs = core.GetServiceX<VDX9RENDER>();
     if (!rs)
         throw std::runtime_error("No service: dx9render");
     rs->SetRenderState(D3DRS_LIGHTING, FALSE);
@@ -1019,12 +1019,14 @@ void Location::CreateSphere()
 
 bool Location::IsExDebugView()
 {
-    return core.Controls->GetDebugAsyncKeyState('O') < 0;
+    const auto *editor = core.GetEditor();
+    return editor != nullptr && editor->IsDebugFlagEnabled(storm::editor::DebugFlag::ExtendedLocationDebug);
 }
 
 bool Location::IsDebugView()
 {
-    return core.Controls->GetDebugAsyncKeyState('G') < 0 || core.Controls->GetDebugAsyncKeyState('O') < 0;
+    const auto *editor = core.GetEditor();
+    return editor != nullptr && (editor->IsDebugFlagEnabled(storm::editor::DebugFlag::LocationDebug) || editor->IsDebugFlagEnabled(storm::editor::DebugFlag::ExtendedLocationDebug) );
 }
 
 // Write text

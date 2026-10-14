@@ -9,11 +9,18 @@
 #define SCMR_BOXSCALE_Z 1.4f
 
 SHIP_CAMERA::SHIP_CAMERA()
-    : fDistanceDlt(0.0f), fDistanceInertia(15.0f), fAngleXDlt(0.0f), fAngleXInertia(12.0f), fAngleYDlt(0.0f),
-      fAngleYInertia(10.0f), fModelAy(0.0f), pSea(nullptr), pIsland(nullptr), lIlsInitCnt(0), pRS(nullptr)
+    : fDistanceDlt(0.0f)
+    , fDistanceInertia(15.0f)
+    , fAngleXDlt(0.0f)
+    , fAngleXInertia(12.0f)
+    , fAngleYDlt(0.0f)
+    , fAngleYInertia(10.0f)
+    , fModelAy(0.0f)
+    , pSea(nullptr)
+    , pIsland(nullptr)
+    , lIlsInitCnt(0)
+    , pRS(nullptr)
 {
-    SetOn(false);
-    SetActive(false);
 }
 
 bool SHIP_CAMERA::Init()
@@ -25,22 +32,20 @@ bool SHIP_CAMERA::Init()
 
 void SHIP_CAMERA::SetDevices()
 {
-    pRS = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    pRS = core.GetServiceX<VDX9RENDER>();
     Assert(pRS);
 
     pSea = static_cast<SEA_BASE *>(core.GetEntityPointer(core.GetEntityId("sea")));
 }
 
-void SHIP_CAMERA::Execute(uint32_t dwDeltaTime)
+void SHIP_CAMERA::Execute(uint32_t real_delta)
 {
-    if (!isOn())
-        return;
     if (!FindShip())
         return;
 
     SetPerspective(AttributesPointer->GetAttributeAsFloat("Perspective"));
 
-    const auto fDeltaTime = 0.001f * static_cast<float>(core.GetDeltaTime());
+    const auto fDeltaTime = 0.001f * real_delta;
 
     const auto *pModel = GetModelPointer();
     Assert(pModel);
@@ -52,17 +57,15 @@ void SHIP_CAMERA::Execute(uint32_t dwDeltaTime)
     Move(fDeltaTime);
 }
 
-void SHIP_CAMERA::Realize(uint32_t dwDeltaTime) const
-{
-    pRS->DrawEllipsoid(GetAIObj()->GetPos(), a, b, c, fModelAy, 0x900C0C0C);
-    pRS->DrawSphere(vCenter, 5.0f, 0xFFFFFFFF);
-}
+// void SHIP_CAMERA::Realize(uint32_t dwDeltaTime) const
+// {
+//     pRS->DrawEllipsoid(GetAIObj()->GetPos(), a, b, c, fModelAy, 0x900C0C0C);
+//     pRS->DrawSphere(vCenter, 5.0f, 0xFFFFFFFF);
+// }
 
 void SHIP_CAMERA::Move(float fDeltaTime)
 {
     if (!pSea)
-        return;
-    if (!isActive())
         return;
 
     const auto fSpeed = fDeltaTime;
@@ -351,8 +354,7 @@ void SHIP_CAMERA::Save(CSaveLoad *pSL)
     pSL->SaveFloat(fModelAy);
     pSL->SaveLong(lIlsInitCnt);
 
-    pSL->SaveDword(isOn());
-    pSL->SaveDword(isActive());
+    pSL->SaveDword(IsActive());
     pSL->SaveFloat(GetPerspective());
     pSL->SaveAPointer("character", pACharacter);
 }
@@ -387,7 +389,6 @@ void SHIP_CAMERA::Load(CSaveLoad *pSL)
     fModelAy = pSL->LoadFloat();
     lIlsInitCnt = pSL->LoadLong();
 
-    SetOn(pSL->LoadDword() != 0);
     SetActive(pSL->LoadDword() != 0);
     SetPerspective(pSL->LoadFloat());
     SetCharacter(pSL->LoadAPointer("character"));

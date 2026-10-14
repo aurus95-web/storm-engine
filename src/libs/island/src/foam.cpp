@@ -5,9 +5,15 @@
 #include "dx9render.h"
 #include "math3d.h"
 
+namespace
+{
+
+constexpr size_t MAX_FOAM_VERTICES = 5000;
+
+} // namespace
+
 CoastFoam::CoastFoam()
 {
-    pSea = nullptr;
     iVBuffer = -1;
     iIBuffer = -1;
     iCursorTex = -1;
@@ -39,11 +45,11 @@ CoastFoam::~CoastFoam()
 
 bool CoastFoam::Init()
 {
-    rs = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    rs = core.GetServiceX<VDX9RENDER>();
 
     iVBuffer = rs->CreateVertexBuffer(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1 | D3DFVF_TEXTUREFORMAT2,
-                                      sizeof(FoamVertex) * 5000, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY);
-    iIBuffer = rs->CreateIndexBuffer(10000 * 2 * 3, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY);
+                                      sizeof(FoamVertex) * MAX_FOAM_VERTICES, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY);
+    iIBuffer = rs->CreateIndexBuffer(MAX_FOAM_VERTICES * 2 * 2 * 3, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY);
 
     iCursorTex = rs->TextureCreate("cursor.tga");
 
@@ -86,12 +92,11 @@ void CoastFoam::Realize(uint32_t Delta_Time)
 {
     pFrustumPlanes = rs->GetPlanes();
 
+
+    SEA_BASE *pSea = static_cast<SEA_BASE *>(core.GetEntityPointer(core.GetEntityId("sea")));
     if (pSea == nullptr)
-    {
-        pSea = static_cast<SEA_BASE *>(core.GetEntityPointer(core.GetEntityId("sea")));
-        if (pSea == nullptr)
-            return;
-    }
+        return;
+    SEA_BASE &Sea = *pSea;
 
     auto fDeltaTime = static_cast<float>(Delta_Time) * 0.001f;
     D3DVIEWPORT9 vp;
@@ -114,9 +119,9 @@ void CoastFoam::Realize(uint32_t Delta_Time)
         auto pF = aFoams[i];
 
         if (pF->Type == FOAM_TYPE_1)
-            ExecuteFoamType1(pF, fDeltaTime);
+            ExecuteFoamType1(pF, fDeltaTime, Sea);
         else
-            ExecuteFoamType2(pF, fDeltaTime);
+            ExecuteFoamType2(pF, fDeltaTime, Sea);
     }
     RDTSC_E(dw1);
 
@@ -437,11 +442,12 @@ void CoastFoam::InitNewFoam(Foam *pF)
     pF->iTexture = rs->TextureCreate(("weather\\coastfoam\\" + pF->sTexture).c_str());
 }
 
-void CoastFoam::ExecuteFoamType2(Foam *pF, float fDeltaTime)
+void CoastFoam::ExecuteFoamType2(Foam *pF, float fDeltaTime, SEA_BASE &Sea)
 {
-    const int32_t iLen = pF->aWorkParts.size();
+    int32_t iLen = pF->aWorkParts.size();
     if (!iLen)
         return;
+    iLen = std::min(iLen, static_cast<int32_t>(MAX_FOAM_VERTICES / 8));
 
     CVECTOR vCamPos, vCamAng;
     float fPerspective;
@@ -533,7 +539,7 @@ void CoastFoam::ExecuteFoamType2(Foam *pF, float fDeltaTime)
                     ARGB(static_cast<uint32_t>(pF->fAlphaColor[k] * fAlpha * fAlpha1 * 255.0f), 255, 255, 255);
 
                 auto vPos = pWP->v[0] + (pF->fMove[k] * static_cast<float>(y) / 7.0f) * (pWP->v[1] - pWP->v[0]);
-                vPos.y = fFoamDeltaY + pSea->WaveXZ(vPos.x, vPos.z);
+                vPos.y = fFoamDeltaY + Sea.WaveXZ(vPos.x, vPos.z);
                 // vPos.y += 3.0f * fAmp * sinf(float(y) / 7.0f * PI);
                 pFV[x + y * iLen].vPos = vPos;
                 pFV[x + y * iLen].dwColor = dwColor;
@@ -612,7 +618,7 @@ bool CoastFoam::IsClipped(Foam *pF)
     return false;
 }
 
-void CoastFoam::ExecuteFoamType1(Foam *pF, float fDeltaTime)
+void CoastFoam::ExecuteFoamType1(Foam *pF, float fDeltaTime, SEA_BASE &Sea)
 {
     const int32_t iLen = pF->aWorkParts.size();
     if (!iLen)
@@ -669,7 +675,7 @@ void CoastFoam::ExecuteFoamType1(Foam *pF, float fDeltaTime)
             }
 
             auto vPos = pWP->v[0] + pWP->p[y].fPos * (pWP->v[1] - pWP->v[0]);
-            vPos.y = fFoamDeltaY + pSea->WaveXZ(vPos.x, vPos.z);
+            vPos.y = fFoamDeltaY + Sea.WaveXZ(vPos.x, vPos.z);
             // vPos.y += 3.0f * fAmp * sinf(float(y) / 7.0f * PI);
             pFV[x + y * iLen].vPos = vPos;
             pFV[x + y * iLen].dwColor = dwColor;

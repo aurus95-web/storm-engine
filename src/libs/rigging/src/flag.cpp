@@ -5,7 +5,7 @@
 #include "shared/sail_msg.h"
 #include "ship_base.h"
 #include "string_compare.hpp"
-#include "v_file_service.h"
+#include "file_service.h"
 #include "weather_base.h"
 
 static const char *RIGGING_INI_FILE = "resource\\ini\\rigging.ini";
@@ -52,7 +52,7 @@ bool FLAG::Init()
 void FLAG::SetDevice()
 {
     // get render service
-    RenderService = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    RenderService = core.GetServiceX<VDX9RENDER>();
     if (!RenderService)
     {
         throw std::runtime_error("No service: dx9render");
@@ -184,10 +184,17 @@ uint64_t FLAG::ProcessMessage(MESSAGE &message)
 
         if (message.GetFormat().size() >= 4)
         {
-            entid_t eidShip = message.EntityID();
-            gdata[groupQuantity - 1].ship_id = eidShip;
-            gdata[groupQuantity - 1].char_attributes =
-                ((VAI_OBJBASE *)core.GetEntityPointer(gdata[groupQuantity - 1].ship_id))->GetACharacter();
+            if (message.GetCurrentFormatType() == 'i')
+            {
+                entid_t eidShip = message.EntityID();
+                gdata[groupQuantity - 1].ship_id = eidShip;
+                gdata[groupQuantity - 1].char_attributes =
+                    ((VAI_OBJBASE *)core.GetEntityPointer(gdata[groupQuantity - 1].ship_id))->GetACharacter();
+            }
+            else if (message.GetCurrentFormatType() == 'a')
+            {
+                gdata[groupQuantity - 1].char_attributes = message.AttributePointer();
+            }
         }
 
         NODE *nod;

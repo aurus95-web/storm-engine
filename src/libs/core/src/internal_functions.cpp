@@ -1,6 +1,8 @@
 #include "compiler.h"
 #include "core_impl.h"
 #include "debug-trap.h"
+#include "math_common.hpp"
+#include "storm/errors/InvalidMessageFormatError.hpp"
 
 #include <execution>
 
@@ -1461,7 +1463,11 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(INVALID_FA);
             break;
         }
-        pV->Get(TempLong2);
+        if (!pV->Get(TempLong2) )
+        {
+            SetError(INVALID_FA ", layer index not valid");
+            break;
+        }
         pV2->Get(TempEid);
         pV3->Get(TempLong1);
         core.AddToLayer(TempLong2, TempEid, TempLong1);
@@ -1534,7 +1540,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         break;
 
     case FUNC_FRAND:
-        TempFloat1 = static_cast<float>(rand()) / RAND_MAX;
+        TempFloat1 = storm::RandomFloat();
         pV = SStack.Push();
         // TempFloat1 = 1.0f;    // ***
         pV->Set(TempFloat1);
@@ -1581,7 +1587,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
 
         pV2->Get(pChar);
-        if (ent = core.CreateEntity(pChar, pV->GetAClass()))
+        if (ent = core.CreateEntity(pChar, pV->GetAClass()); ent)
         {
             // core_internal.Entity_SetAttributePointer(&entid_t,pV->GetAClass());
             pV->Set(ent);
@@ -1607,7 +1613,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             break;
         }
         pV->Get(pChar);
-        if (ent = core.CreateEntity(pChar))
+        if (ent = core.CreateEntity(pChar); ent)
         {
             pV = SStack.Push();
             pV->Set(ent);
@@ -1626,6 +1632,10 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
         pV->Get(ent);
         core.EraseEntity(ent);
+
+        // Make sure to clear entity id
+        ent = invalid_entity;
+        pV->Set(ent);
         break;
         //
     case FUNC_DEL_EVENT_HANDLER:
@@ -1856,14 +1866,28 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
         pV->Get(ent);
 
-        CreateMessage(&ms, s_off, 1);
+        const bool message_created = CreateMessage(&ms, s_off, 1);
+        if (!message_created)
+        {
+            break;
+        }
 
         uint64_t mresult = 0;
         pE = core.GetEntityPointerSafe(ent);
         if (pE)
         {
             ms.Move2Start();
+            try
+            {
+
             mresult = pE->ProcessMessage(ms);
+            }
+            catch (const storm::InvalidMessageFormatError &e)
+            {
+                std::string err = fmt::format("Failed to send message: '{}'", e.what());
+                SetError(err.c_str());
+                break;
+            }
         }
         for (n = 0; n < arguments; n++)
         {
@@ -2564,10 +2588,9 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
         pA = pV->GetAClass();
 
-        std::sort(std::execution::seq, std::begin(pA->attributes_), std::end(pA->attributes_),
-                  [](const std::unique_ptr<ATTRIBUTES> &lhs, const std::unique_ptr<ATTRIBUTES> &rhs) {
-                      return strcmp(lhs->GetThisName(), rhs->GetThisName()) < 0;
-                  });
+        pA->Sort([](const std::unique_ptr<ATTRIBUTES> &lhs, const std::unique_ptr<ATTRIBUTES> &rhs) {
+            return strcmp(lhs->GetThisName(), rhs->GetThisName()) < 0;
+        });
 
         break;
     }

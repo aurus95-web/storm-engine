@@ -19,12 +19,12 @@ class CoastFoam : public Entity
 {
   public:
     CoastFoam();
-    ~CoastFoam();
+    ~CoastFoam() override;
 
-    bool Init();
+    bool Init() override;
     void Realize(uint32_t Delta_Time);
     void Execute(uint32_t Delta_Time);
-    uint32_t AttributeChanged(ATTRIBUTES *pA);
+    uint32_t AttributeChanged(ATTRIBUTES *pA) override;
 
     void ProcessStage(Stage stage, uint32_t delta) override
     {
@@ -102,7 +102,6 @@ class CoastFoam : public Entity
     bool bEditMode, bMoved, bCanEdit;
     float fCursorPosX, fCursorPosY;
     int32_t iFoamTexture, iCursorTex;
-    SEA_BASE *pSea;
     std::vector<Foam *> aFoams;
     int32_t iVBuffer, iIBuffer;
     PLANE *pFrustumPlanes;
@@ -124,6 +123,6 @@ class CoastFoam : public Entity
 
     void InitNewFoam(Foam *pF);
     void RecalculateFoam(int32_t iFoam);
-    void ExecuteFoamType2(Foam *pF, float fDeltaTime);
-    void ExecuteFoamType1(Foam *pF, float fDeltaTime);
+    void ExecuteFoamType2(Foam *pF, float fDeltaTime, SEA_BASE &Sea);
+    void ExecuteFoamType1(Foam *pF, float fDeltaTime, SEA_BASE &Sea);
 };

@@ -4,7 +4,7 @@
 #include "math_inlines.h"
 #include "rands.h"
 #include "shared/messages.h"
-#include "v_file_service.h"
+#include "file_service.h"
 
 //--------------------------------------------------------------------
 TFishSchools::TFishSchools() : enabled(false)
@@ -40,7 +40,7 @@ void TFishSchools::Init()
 {
     LoadSettings();
 
-    renderService = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    renderService = core.GetServiceX<VDX9RENDER>();
     if (!renderService)
         throw std::runtime_error("!FishSchools: No service 'dx9render'");
 

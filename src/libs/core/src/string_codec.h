@@ -6,29 +6,26 @@
 
 struct HTSUBELEMENT
 {
-    char *pStr;
-    uint32_t dwHashCode;
+    char *pStr = nullptr;
+    uint32_t dwHashCode{};
 };
 
 struct HTELEMENT
 {
-    HTSUBELEMENT *pElements;
-    uint32_t nStringsNum;
+    HTSUBELEMENT *pElements = nullptr;
+    uint32_t nStringsNum{};
 };
 
 class STRING_CODEC : public VSTRING_CODEC
 {
-    uint32_t nHTIndex;
-    uint32_t nHTEIndex;
-    uint32_t nStringsNum;
+    uint32_t nHTIndex{};
+    uint32_t nHTEIndex{};
+    uint32_t nStringsNum{};
 
     HTELEMENT HTable[HASH_TABLE_SIZE]{};
 
   public:
-    STRING_CODEC() : nHTIndex(0), nHTEIndex(0)
-    {
-        nStringsNum = 0;
-    }
+    STRING_CODEC() = default;
 
     ~STRING_CODEC() override
     {
@@ -131,6 +128,12 @@ class STRING_CODEC : public VSTRING_CODEC
         if (n >= HTable[nTableIndex].nStringsNum)
         {
             return "INVALID SCC";
+        }
+        if (HTable[nTableIndex].pElements == nullptr) {
+            return "INVALID SC ELEMENTS";
+        }
+        if (HTable[nTableIndex].pElements[n].pStr == nullptr) {
+            return "INVALID SC VALUE";
         }
         return HTable[nTableIndex].pElements[n].pStr;
     }

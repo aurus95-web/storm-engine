@@ -20,6 +20,13 @@
 #define WdmCloudsSizeMin 30.0f
 #define WdmCloudsSizeMax 50.0f
 
+namespace
+{
+
+constexpr size_t kCloudAmount = 16;
+
+} // namespace
+
 IDirect3DVertexDeclaration9 *WdmClouds::vertexDecl_ = nullptr;
 
 WdmClouds::Cloud::Cloud()
@@ -272,10 +279,10 @@ void WdmClouds::Cloud::Kill(const Cloud &cld)
 
 WdmClouds::WdmClouds()
 {
-    // set positions and directions to groups
-    for (int32_t i = 0; i < sizeof(clouds) / sizeof(Cloud); i++)
+    clouds_.resize(kCloudAmount);
+    for (auto &cloud: clouds_)
     {
-        clouds[i].Reset(true);
+        cloud.Reset(true);
     }
     texture = wdmObjects->rs->TextureCreate("\\WorldMap\\clouds.tga");
     light = wdmObjects->rs->TextureCreate("\\WorldMap\\cloudslight.tga");
@@ -293,22 +300,24 @@ WdmClouds::~WdmClouds()
 void WdmClouds::Update(float dltTime)
 {
     // Restart killed ones
-    for (int32_t i = 0; i < sizeof(clouds) / sizeof(Cloud); i++)
+    for (auto &cloud: clouds_)
     {
-        if (clouds[i].Reset())
+        if (cloud.Reset() )
+        {
             break;
+        }
     }
     // Updating positions
-    for (int32_t i = 0; i < sizeof(clouds) / sizeof(Cloud); i++)
+    for (auto &cloud: clouds_)
     {
-        clouds[i].Update(dltTime);
+        cloud.Update(dltTime);
     }
     // Remove strongly intersecting
-    for (int32_t i = 0; i < sizeof(clouds) / sizeof(Cloud) - 1; i++)
+    for (auto first_it  = clouds_.begin(), it_end = clouds_.end(); first_it < it_end; ++first_it)
     {
-        for (auto j = i + 1; j < sizeof(clouds) / sizeof(Cloud); j++)
+        for(auto second_it = first_it + 1; second_it < it_end; ++second_it)
         {
-            clouds[j].Kill(clouds[i]);
+            first_it->Kill(*second_it);
         }
     }
 }
@@ -332,11 +341,11 @@ void WdmClouds::LRender(VDX9RENDER *rs)
     alpha *= alpha;
     // Draw visible
     int32_t count = 0;
-    for (int32_t i = 0; i < sizeof(clouds) / sizeof(Cloud); i++)
+    for (auto &cloud: clouds_)
     {
         // get the sphere
         CVECTOR c;
-        auto r = clouds[i].GetBound(c);
+        auto r = cloud.GetBound(c);
         // test for visibility
         int32_t j;
         for (j = 0; j < 4; j++)
@@ -349,7 +358,7 @@ void WdmClouds::LRender(VDX9RENDER *rs)
         if (j < 4)
             continue;
         // Add to buffer
-        count = clouds[i].FillRects(rects, count, alpha);
+        count = cloud.FillRects(rects, count, alpha);
 
         cnt++;
     }
@@ -363,17 +372,25 @@ void WdmClouds::LRender(VDX9RENDER *rs)
 
         CMatrix prj;
         rs->GetTransform(D3DTS_PROJECTION, prj);
-        view.Transposition();
+        CMatrix clouds = prj;
+        clouds.matrix[0] = view.matrix[1];
+        clouds.matrix[1] = view.matrix[5];
+        clouds.matrix[2] = view.matrix[9];
+        clouds.matrix[3] = view.matrix[13] - WdmCloudsCloudHeight;
+        clouds.matrix[4] = WdmCloudsSizeMin * 1.4f;
+        clouds.matrix[5] = 0.0f;
+        clouds.matrix[6] = (WdmCloudsSizeMax - WdmCloudsSizeMin) * 1.4f;
+        clouds.matrix[7] = 0.5f;
+
+#ifdef _WIN32 // Effects
+        Assert(fx_ != nullptr);
+        fx_->SetMatrix(projectionMatrix_, prj);
+        fx_->SetMatrix(cloudMatrix_, clouds);
+#else
         rs->SetVertexShaderConstantF(0, prj, 4);
-        prj.matrix[0] = view.matrix[1];
-        prj.matrix[1] = view.matrix[5];
-        prj.matrix[2] = view.matrix[9];
-        prj.matrix[3] = view.matrix[13] - WdmCloudsCloudHeight;
-        prj.matrix[4] = WdmCloudsSizeMin * 1.4f;
-        prj.matrix[5] = 0.0f;
-        prj.matrix[6] = (WdmCloudsSizeMax - WdmCloudsSizeMin) * 1.4f;
-        prj.matrix[7] = 0.5f;
-        rs->SetVertexShaderConstantF(4, prj, 2);
+        rs->SetVertexShaderConstantF(4, clouds, 2);
+#endif
+
         rs->DrawRects(rects, count, "WdmClouds", 2, 2);
     }
     // rs->Print(20, 200, "Visible clouds = %i, Visible particles = %i", cnt, count);
@@ -391,4 +408,12 @@ void WdmClouds::CreateVertexDeclaration(VDX9RENDER *rs)
         D3DDECL_END()};
 
     rs->CreateVertexDeclaration(VertexElements, &vertexDecl_);
+
+#ifdef _WIN32 // Effects
+    fx_ = rs->GetEffectPointer("WdmClouds");
+    if (fx_ != nullptr) {
+        projectionMatrix_ = fx_->GetParameterByName(nullptr, "projectionMatrix");
+        cloudMatrix_ = fx_->GetParameterByName(nullptr, "cloudMatrix");
+    }
+#endif
 }

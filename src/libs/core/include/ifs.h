@@ -96,7 +96,7 @@ class IFS : public INIFILE
     void Format(char *file_data, int32_t file_size);
     bool VoidSym(char symbol);
 
-    VFILE_SERVICE *fs;
+    FILE_SERVICE *fs;
     char *FileName;
     bool bDataChanged;
     uint32_t Reference;
@@ -125,13 +125,13 @@ class IFS : public INIFILE
     IFS_NOT_IMPLEMENTED(float GetFloat(const char *section_name, const char *key_name, float def_val))
     IFS_NOT_IMPLEMENTED(bool GetFloatNext(const char *section_name, const char *key_name, float *val))
 
-    bool CaseSensitive(bool yes)
+    bool CaseSensitive(bool yes) override
     {
         return false;
     }
 #undef IFS_NOT_IMPLEMENTED
 
-    IFS(VFILE_SERVICE *_fs);
+    IFS(FILE_SERVICE *_fs);
     ~IFS();
 
     bool LoadFile(const char *file_name);
@@ -181,4 +181,6 @@ class IFS : public INIFILE
     void Flush() override;
     bool Reload() override;
     bool TestSection(const char *section_name) override;
+
+    storm::Data ToData() override;
 };

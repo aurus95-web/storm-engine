@@ -3,7 +3,7 @@
 
 #include "core.h"
 
-#include "v_file_service.h"
+#include "file_service.h"
 
 #define FILE_PATH "TextureSequence\\%s.tga"
 static const char *INI_FILENAME = "resource\\ini\\TextureSequence.ini";

@@ -18,6 +18,12 @@ class WdmCloud;
 
 class WdmClouds : public WdmRenderObject
 {
+#ifdef _WIN32 // Effects
+    static inline ID3DXEffect *fx_;
+    static inline D3DXHANDLE projectionMatrix_;
+    static inline D3DXHANDLE cloudMatrix_;
+#endif
+
     static IDirect3DVertexDeclaration9 *vertexDecl_;
     void CreateVertexDeclaration(VDX9RENDER *rs);
 
@@ -72,6 +78,6 @@ class WdmClouds : public WdmRenderObject
     void LRender(VDX9RENDER *rs) override;
 
     int32_t texture, light;
-    Cloud clouds[16];
+    std::vector<Cloud> clouds_;
     RS_RECT rects[WDMCLOUDSMAX * 16];
 };

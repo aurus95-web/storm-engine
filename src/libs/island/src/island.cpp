@@ -2,18 +2,19 @@
 
 #include "core.h"
 #include "foam.h"
-#include "weather_base.h"
 #include "math_inlines.h"
 #include "shared/messages.h"
 #include "shared/sea_ai/script_defines.h"
 #include "tga.h"
+#include "weather_base.h"
 #include <cstdio>
+#include <imgui.h>
+
+using storm::Sqr;
 
 CREATE_CLASS(ISLAND)
 
 CREATE_CLASS(CoastFoam)
-
-#define TGA_DATA_CHUNK 0xC001F00D
 
 #define HMAP_EMPTY 0
 #define HMAP_START 2.0f
@@ -22,21 +23,6 @@ CREATE_CLASS(CoastFoam)
 
 #define SEA_BED_NODE_NAME "seabed"
 
-#define DMAP_SIZE 2048
-
-ISLAND::ISLAND()
-{
-    dynamicLightsOn = false; //dynamic lighting
-    bForeignModels = false;
-    pRS = nullptr;
-    pGS = nullptr;
-    pDepthMap = nullptr;
-    pShadowMap = nullptr;
-    bDrawReflections = false;
-
-    fCurrentImmersion = 0.0f;
-}
-
 ISLAND::~ISLAND()
 {
     Uninit();
@@ -44,12 +30,6 @@ ISLAND::~ISLAND()
 
 void ISLAND::Uninit()
 {
-    for (uint32_t i = 0; i < aSpheres.size(); i++)
-        core.EraseEntity(aSpheres[i]);
-    aSpheres.clear();
-    STORM_DELETE(pDepthMap);
-    STORM_DELETE(pShadowMap);
-
     if (!bForeignModels)
     {
         core.EraseEntity(model_id);
@@ -77,15 +57,13 @@ void ISLAND::SetDevice()
 {
     // core.LayerCreate("island_trace", true, false);
 
-    pCollide = static_cast<COLLIDE *>(core.GetService("COLL"));
+    pCollide = core.GetServiceX<COLLIDE>();
     Assert(pCollide);
-    pRS = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    pRS = core.GetServiceX<VDX9RENDER>();
     Assert(pRS);
-    pGS = static_cast<VGEOMETRY *>(core.GetService("geometry"));
+    pGS = core.GetServiceX<VGEOMETRY>();
     Assert(pGS);
 }
-
-bool bView = false;
 
 void ISLAND::Realize(uint32_t Delta_Time)
 {
@@ -189,7 +167,6 @@ void ISLAND::Realize(uint32_t Delta_Time)
     if (!bDrawReflections)
     {
         pRS->SetRenderState(D3DRS_FOGENABLE, false);
-        // pRS->SetRenderState(D3DRS_AMBIENT, RGB(dwAmbient/4,dwAmbient/4,dwAmbient/4));
 
         auto *pSeaBed = static_cast<MODEL *>(core.GetEntityPointer(seabed_id));
         if (pSeaBed)
@@ -204,17 +181,8 @@ void ISLAND::Realize(uint32_t Delta_Time)
     pRS->SetRenderState(D3DRS_LIGHTING, bLighting);
 
     uint32_t i;
-    for (i = 0; i < aSpheres.size(); i++)
-    {
-        auto *pModel = static_cast<MODEL *>(core.GetEntityPointer(aSpheres[i]));
-        auto vPos = AIPath.GetPointPos(i);
-        if (pModel)
-            pModel->mtx.BuildPosition(vPos.x, 5.0f, vPos.z);
-    }
 
-    if (core.Controls->GetDebugAsyncKeyState('O') < 0)
-        bView ^= 1;
-    if (bView)
+    if (enableDebugView_)
     {
         std::vector<RS_LINE> aLines;
         for (i = 0; i < AIPath.GetNumEdges(); i++)
@@ -227,11 +195,6 @@ void ISLAND::Realize(uint32_t Delta_Time)
         pRS->SetTransform(D3DTS_WORLD, m);
         pRS->DrawLines(&aLines[0], aLines.size() / 2, "Line");
     }
-}
-
-bool ISLAND::GetDepth(FRECT *pRect, float *fMinH, float *fMaxH)
-{
-    return false;
 }
 
 uint64_t ISLAND::ProcessMessage(MESSAGE &message)
@@ -256,12 +219,10 @@ uint64_t ISLAND::ProcessMessage(MESSAGE &message)
         cModelsID = message.String();
         Mount(cModelsID, cModelsDir, nullptr);
         CreateHeightMap(cFoamDir, cModelsID);
-        // CreateShadowMap(cModelsDir, cModelsID);
     }
     break;
     case MSG_ISLAND_START: // from location
         CreateHeightMap(cModelsDir, cModelsID);
-        // CreateShadowMap(cModelsDir, cModelsID);
         break;
     case MSG_SEA_REFLECTION_DRAW:
         bDrawReflections = true;
@@ -275,23 +236,6 @@ uint64_t ISLAND::ProcessMessage(MESSAGE &message)
     return 1;
 }
 
-inline float ISLAND::GetShadowTemp(int32_t iX, int32_t iZ)
-{
-    if (iX >= 0 && iX < DMAP_SIZE && iZ >= 0 && iZ < DMAP_SIZE)
-        return static_cast<float>(mzShadow.Get(iX, iZ)) / 255.0f;
-    return 1.0f;
-}
-
-bool ISLAND::GetShadow(float x, float z, float *fRes)
-{
-    const float fX = (x - vBoxCenter.x) / fShadowMapStep;
-    const float fZ = (z - vBoxCenter.z) / fShadowMapStep;
-
-    *fRes = GetShadowTemp(ftoi(fX) + mzShadow.GetSizeX() / 2, ftoi(fZ) + mzShadow.GetSizeX() / 2);
-
-    return true;
-}
-
 void ISLAND::AddLocationModel(entid_t eid, const std::string_view &pIDStr, const std::string_view &pDir)
 {
     Assert(!pDir.empty() && !pIDStr.empty());
@@ -303,27 +247,11 @@ void ISLAND::AddLocationModel(entid_t eid, const std::string_view &pIDStr, const
 
 inline float ISLAND::GetDepthNoCheck(uint32_t iX, uint32_t iZ)
 {
-    // if (!mzDepth.isLoaded()) return HMAP_MAXHEIGHT;
-
-    /*BYTE byHeight = mzDepth.Get(iX,iZ);
-    if (byHeight == HMAP_EMPTY) return HMAP_MAXHEIGHT;
-    float fHeight = float(HMAP_MAXHEIGHT / HMAP_NUMBERS * (float(byHeight) - HMAP_START) );
-    return fHeight;*/
-
     return fDepthHeight[mzDepth.Get(iX, iZ)];
-}
-
-inline float ISLAND::GetDepthCheck(uint32_t iX, uint32_t iZ)
-{
-    // if (iX>=iDMapSize) iX = iDMapSize - 1;
-    // if (iZ>=iDMapSize) iZ = iDMapSize - 1;
-    return GetDepthNoCheck(iX, iZ);
 }
 
 bool ISLAND::Check2DBoxDepth(CVECTOR vPos, CVECTOR vSize, float fAngY, float fMinDepth)
 {
-    // if (!mzDepth.isLoaded()) return false;
-
     const float fCos = cosf(fAngY), fSin = sinf(fAngY);
     for (float z = -vSize.z / 2.0f; z < vSize.z / 2.0f; z += fStepDZ)
         for (float x = -vSize.x / 2.0f; x < vSize.x / 2.0f; x += fStepDX)
@@ -447,120 +375,6 @@ void ISLAND::CalcBoxParameters(CVECTOR &_vBoxCenter, CVECTOR &_vBoxSize)
     _vBoxSize = CVECTOR(x2 - x1, 0.0f, z2 - z1);
 }
 
-bool ISLAND::CreateShadowMap(char *pDir, char *pName)
-{
-    auto *const pWeather =
-        static_cast<WEATHER_BASE *>(core.GetEntityPointer(core.GetEntityId("Weather")));
-    if (pWeather == nullptr)
-    {
-        throw std::runtime_error("No found WEATHER entity!");
-    }
-
-    const std::filesystem::path path =
-        std::filesystem::path() / "resource" / "foam" / pDir / to_string(AttributesPointer->GetAttribute("LightingPath"));
-    const std::string fileName = path.string() + pName + ".tga";
-
-    fShadowMapSize = 2.0f * Max(vRealBoxSize.x, vRealBoxSize.z) + 1024.0f;
-    fShadowMapStep = fShadowMapSize / DMAP_SIZE;
-
-    if (mzShadow.Load(fileName + ".zap"))
-    {
-        return true;
-    }
-
-    // try to load tga file
-    auto fileS = fio->_CreateFile(fileName.c_str(), std::ios::binary | std::ios::in);
-    if (fileS.is_open())
-    {
-        TGA_H tga_head;
-
-        fio->_ReadFile(fileS, &tga_head, sizeof(tga_head));
-        const uint32_t dwSize = tga_head.width;
-        pShadowMap = new uint8_t[dwSize * dwSize];
-        fio->_ReadFile(fileS, pShadowMap, dwSize * dwSize);
-        fio->_CloseFile(fileS);
-
-        mzShadow.DoZip(pShadowMap, dwSize);
-        mzShadow.Save(fileName + ".zap");
-        STORM_DELETE(pShadowMap);
-        return true;
-    }
-
-    pShadowMap = new uint8_t[DMAP_SIZE * DMAP_SIZE];
-
-    float fX, fZ;
-    uint32_t x, z;
-    CVECTOR vSun;
-    pWeather->GetVector(whv_sun_pos, &vSun); // CVECTOR(15000.0f, 2000.0f, 15000.0f);
-    vSun = 100000.0f * !vSun;
-
-    for (fZ = -fShadowMapSize / 2.0f, z = 0; fZ < fShadowMapSize / 2.0f; fZ += fShadowMapStep, z++)
-        for (fX = -fShadowMapSize / 2.0f, x = 0; fX < fShadowMapSize / 2.0f; fX += fShadowMapStep, x++)
-        {
-            // uint32_t x = uint32_t((fX + fShadowMapSize / 2.0f) / fShadowMapStep);
-            // uint32_t z = uint32_t((fZ + fShadowMapSize / 2.0f) / fShadowMapStep);
-            // if (x == 774) _asm int 3
-            CVECTOR vSrc = CVECTOR(fX, 2.0f, fZ) + vBoxCenter;
-            CVECTOR vDst = vSrc + vSun;
-            float fRes = Trace(vSrc, vDst);
-            pShadowMap[x + z * DMAP_SIZE] = 255;
-            if (fRes <= 1.0f)
-            {
-                const float fLen = sqrtf(~(vSun - vSrc)) * fRes;
-                const float fValue = Bring2Range(50.0f, 254.0f, 0.0f, 500.0f, fLen);
-                pShadowMap[x + z * DMAP_SIZE] = static_cast<uint8_t>(fValue);
-            }
-            if (GetDepthFast(vSrc.x, vSrc.z, &fRes))
-            {
-                if (fRes >= -0.001f)
-                {
-                    pShadowMap[x + z * DMAP_SIZE] = 0;
-                }
-            }
-        }
-
-    SaveTga8((char *)fileName.c_str(), pShadowMap, DMAP_SIZE, DMAP_SIZE);
-
-    Blur8(&pShadowMap, DMAP_SIZE);
-    Blur8(&pShadowMap, DMAP_SIZE);
-    Blur8(&pShadowMap, DMAP_SIZE);
-    Blur8(&pShadowMap, DMAP_SIZE);
-
-    mzShadow.DoZip(pShadowMap, DMAP_SIZE);
-    mzShadow.Save(fileName + ".zap");
-
-    STORM_DELETE(pShadowMap);
-
-    return true;
-}
-
-void ISLAND::Blur8(uint8_t **pBuffer, uint32_t dwSize)
-{
-    uint32_t x, z;
-    uint8_t *pNewBuffer = new uint8_t[dwSize * dwSize];
-    const uint32_t dwMask = dwSize - 1;
-    // do blur for shadow map
-    for (z = 0; z < dwSize; z++)
-        for (x = 0; x < dwSize; x++)
-        {
-            uint32_t dwRes = (*pBuffer)[z * dwSize + x];
-            dwRes += (*pBuffer)[((z + 0) & dwMask) * dwSize + ((x + 1) & dwMask)];
-            dwRes += (*pBuffer)[((z + 1) & dwMask) * dwSize + ((x + 1) & dwMask)];
-            dwRes += (*pBuffer)[((z + 1) & dwMask) * dwSize + ((x + 0) & dwMask)];
-            dwRes += (*pBuffer)[((z + 1) & dwMask) * dwSize + ((x - 1) & dwMask)];
-            dwRes += (*pBuffer)[((z + 0) & dwMask) * dwSize + ((x - 1) & dwMask)];
-            dwRes += (*pBuffer)[((z - 1) & dwMask) * dwSize + ((x - 1) & dwMask)];
-            dwRes += (*pBuffer)[((z - 1) & dwMask) * dwSize + ((x + 0) & dwMask)];
-            dwRes += (*pBuffer)[((z - 1) & dwMask) * dwSize + ((x + 1) & dwMask)];
-            dwRes /= 9;
-
-            pNewBuffer[z * dwSize + x] = static_cast<uint8_t>(dwRes);
-        }
-
-    STORM_DELETE(*pBuffer);
-    *pBuffer = pNewBuffer;
-}
-
 bool ISLAND::CreateHeightMap(const std::string_view &pDir, const std::string_view &pName)
 {
     TGA_H tga_head;
@@ -588,13 +402,13 @@ bool ISLAND::CreateHeightMap(const std::string_view &pDir, const std::string_vie
         {
             fio->_ReadFile(fileS, &tga_head, sizeof(tga_head));
             iDMapSize = tga_head.width;
-            pDepthMap = new uint8_t[iDMapSize * iDMapSize];
-            fio->_ReadFile(fileS, pDepthMap, iDMapSize * iDMapSize);
+            pDepthMap.resize(iDMapSize * iDMapSize);
+            fio->_ReadFile(fileS, pDepthMap.data(), pDepthMap.size());
             fio->_CloseFile(fileS);
 
             mzDepth.DoZip(pDepthMap, iDMapSize);
             mzDepth.Save(fileName + ".zap");
-            STORM_DELETE(pDepthMap);
+            pDepthMap.clear();
             bLoad = true;
         }
     }
@@ -654,7 +468,7 @@ bool ISLAND::CreateHeightMap(const std::string_view &pDir, const std::string_vie
     fStep1divDX = 1.0f / fStepDX;
     fStep1divDZ = 1.0f / fStepDZ;
 
-    pDepthMap = new uint8_t[iDMapSize * iDMapSize];
+    pDepthMap.resize(iDMapSize * iDMapSize);
 
     float fEarthPercent = 0.0f;
     float fX, fZ;
@@ -708,11 +522,11 @@ bool ISLAND::CreateHeightMap(const std::string_view &pDir, const std::string_vie
     vBoxSize /= 2.0f;
     vRealBoxSize /= 2.0f;
 
-    SaveTga8((char *)fileName.c_str(), pDepthMap, iDMapSize, iDMapSize);
+    SaveTga8((char *)fileName.c_str(), pDepthMap.data(), iDMapSize, iDMapSize);
 
     mzDepth.DoZip(pDepthMap, iDMapSize);
     mzDepth.Save(fileName + ".zap");
-    STORM_DELETE(pDepthMap);
+    pDepthMap.clear();
 
     auto pI = fio->OpenIniFile(iniName.c_str());
     if (!pI)
@@ -755,22 +569,15 @@ bool ISLAND::SaveTga8(char *fname, uint8_t *pBuffer, uint32_t dwSizeX, uint32_t 
 
 bool ISLAND::Mount(const std::string_view &fname, const std::string_view &fdir, entid_t *eID)
 {
-    // std::string        sRealFileName;
-    // std::string sModelPath, sLightPath;
-
     Uninit();
 
     SetName(fname);
 
     const std::filesystem::path path = std::filesystem::path() / fdir / fname;
     const std::string pathStr = path.string();
-    // MessageBoxA(NULL, (LPCSTR)path.c_str(), "", MB_OK); //~!~
-    // sRealFileName.Format("%s\\%s", fdir, fname); sRealFileName.CheckPath();
 
     //switch dynamic light on/off + diag message if you need  --->
     dynamicLightsOn = AttributesPointer->GetAttributeAsDword("dynamicLightsOn", 0);
-    //core.Trace("ISLAND: island %s, dynamicLightsOn = %d", std::string(fname).c_str(), dynamicLightsOn);
-    // <---
 
     model_id = core.CreateEntity("MODELR");
     core.Send_Message(model_id, "ls", MSG_MODEL_SET_LIGHT_PATH, static_cast<const char*>(AttributesPointer->GetAttribute("LightingPath")));
@@ -791,13 +598,6 @@ bool ISLAND::Mount(const std::string_view &fname, const std::string_view &fdir, 
     auto *pSeaBedModel = static_cast<MODEL *>(core.GetEntityPointer(seabed_id));
 
     mIslandOld = pModel->mtx;
-    if (pSeaBedModel)
-        mSeaBedOld = pSeaBedModel->mtx;
-
-    /*sModelPath.Format("islands\\%s\\", fname); sModelPath.CheckPath();
-    core.Send_Message(lighter_id, "ss", "ModelsPath", (char*)sModelPath);
-    sLightPath.Format("%s", AttributesPointer->GetAttribute("LightingPath")); sLightPath.CheckPath();
-    core.Send_Message(lighter_id, "ss", "LightPath", (char*)sLightPath);*/
 
     const auto lighter_id = core.GetEntityId("lighter");
     core.Send_Message(lighter_id, "ssi", "AddModel", std::string(fname).c_str(), model_id);
@@ -806,22 +606,6 @@ bool ISLAND::Mount(const std::string_view &fname, const std::string_view &fdir, 
 
     fImmersionDistance = AttributesPointer->GetAttributeAsFloat("ImmersionDistance", 3000.0f);
     fImmersionDepth = AttributesPointer->GetAttributeAsFloat("ImmersionDepth", 25.0f);
-
-    // CreateHeightMap(fname);
-
-    // load geometry for reflection and add it to reflection layer
-
-    /*for (uint32_t i=0;i<AIPath.GetNumPoints();i++)
-    {
-      entid_t eid;
-      core.CreateEntity(&eid,"MODELR");
-      core.Send_Message(eid,"ls",MSG_MODEL_LOAD_GEO,"mirror");
-      core.AddToLayer("sea_realize",eid,10000);
-      aSpheres.Add(eid);
-    }*/
-
-    // AIFlowGraph::Path * pPath = FindPath(CVECTOR(-10000.0f,0.0f,-10000.0f),CVECTOR(10000.0f,0.0f,10000.0f));
-    // STORM_DELETE(pPath);
 
     return true;
 }
@@ -905,27 +689,13 @@ bool ISLAND::GetMovePoint(CVECTOR &vSrc, CVECTOR &vDst, CVECTOR &vRes)
     return true;
 }
 
-/*AIFlowGraph::VectorPath    * ISLAND::FindPath(CVECTOR & vSrc, CVECTOR & vDst)
+void ISLAND::ShowEditor()
 {
-    AIFlowGraph::VectorPath        * pVPath;
+    ImGui::Text("Island");
+    ImGui::Checkbox("Debug view", &enableDebugView_);
+    ImGui::Checkbox("Dynamic lights", &dynamicLightsOn);
 
-    // check for free path
-
-    // check for one side
-    if ((vSrc.x <= rIsland.x1 && vDst.x <= rIsland.x1) || (vSrc.x >= rIsland.x2 && vDst.x >= rIsland.x2) ||
-        (vSrc.z <= rIsland.y1 && vDst.z <= rIsland.y1) || (vSrc.z >= rIsland.y2 && vDst.z >= rIsland.y2))
-    {
-        return null;
-    }
-    // search to near points
-    std::vector<AIFlowGraph::npoint_t> & Points = AIPath.GetNearestPoints(vSrc);
-    uint32_t dwPnt1 = Points[0].dwPnt;
-    Points = AIPath.GetNearestPoints(vDst);
-    uint32_t dwPnt2 = Points[0].dwPnt;
-
-    pVPath = AIPath.GetVectorPath(dwPnt1,dwPnt2);
-    if (!pVPath) return null;
-
-    return pVPath;
+    ImGui::DragFloat("Immersion Depth", &fImmersionDepth, 0.005f, 0.0f, 1.0f, "%.3f");
+    ImGui::DragFloat("Immersion Distance", &fImmersionDistance, 0.005f, 0.0f, 1.0f, "%.3f");
+    ImGui::DragFloat("Current Immersion", &fCurrentImmersion, 0.005f, 0.0f, 1.0f, "%.3f");
 }
-*/

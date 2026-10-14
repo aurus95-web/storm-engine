@@ -75,7 +75,7 @@ bool Fader::Init()
     core.AddToLayer(FADER_EXECUTE, GetId(), -256);
 
     // DX9 render
-    rs = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    rs = core.GetServiceX<VDX9RENDER>();
     if (!rs)
         throw std::runtime_error("No service: dx9render");
     D3DVIEWPORT9 vp;
@@ -239,7 +239,7 @@ uint64_t Fader::ProcessMessage(MESSAGE &message)
         {
             // sprintf_s(_name, "tips\\tips_%.4u.tga", rand() % numberOfTips);
             auto *const pTipsName = rs->GetTipsImage();
-            if (pTipsName)
+            if (pTipsName && *pTipsName != '\0')
             {
                 if (tipsID >= 0)
                 {

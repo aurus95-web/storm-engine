@@ -77,11 +77,13 @@ class INIFILE_T : public INIFILE
     bool CaseSensitive(bool v) override;
 
     bool TestSection(const char *section_name) override;
+
+    storm::Data ToData() override;
 };
 
-class FILE_SERVICE : public VFILE_SERVICE
+class FILE_SERVICE final
 {
-  protected:
+  private:
     // INIFILE_R * OpenFiles[_MAX_OPEN_INI_FILES];
     IFS *OpenFiles[_MAX_OPEN_INI_FILES];
     uint32_t Files_Num;
@@ -93,40 +95,41 @@ class FILE_SERVICE : public VFILE_SERVICE
   public:
     FILE_SERVICE();
     ~FILE_SERVICE();
-    std::fstream _CreateFile(const char *filename, std::ios::openmode mode) override;
-    void _CloseFile(std::fstream &fileS) override;
-    void _SetFilePointer(std::fstream &fileS, std::streamoff off, std::ios::seekdir dir) override;
-    bool _DeleteFile(const char *filename) override;
-    bool _WriteFile(std::fstream &fileS, const void *s, std::streamsize count) override;
-    bool _ReadFile(std::fstream &fileS, void *s, std::streamsize count) override;
-    bool _FileOrDirectoryExists(const char *p) override;
+    std::fstream _CreateFile(const char *filename, std::ios::openmode mode);
+    void _CloseFile(std::fstream &fileS);
+    void _SetFilePointer(std::fstream &fileS, std::streamoff off, std::ios::seekdir dir);
+    bool _DeleteFile(const char *filename);
+    bool _WriteFile(std::fstream &fileS, const void *s, std::streamsize count);
+    bool _ReadFile(std::fstream &fileS, void *s, std::streamsize count);
+    bool _FileOrDirectoryExists(const char *p);
     std::vector<std::string> _GetPathsOrFilenamesByMask(const char *sourcePath, const char *mask, bool getPaths,
                                                         bool onlyDirs = false, bool onlyFiles = true,
-                                                        bool recursive = false) override;
+                                                        bool recursive = false);
     std::vector<std::filesystem::path> _GetFsPathsByMask(const char *sourcePath, const char *mask, bool getPaths,
                                                          bool onlyDirs = false, bool onlyFiles = true,
-                                                         bool recursive = false) override;
-    std::time_t _ToTimeT(std::filesystem::file_time_type tp) override;
-    std::filesystem::file_time_type _GetLastWriteTime(const char *filename) override;
-    void _FlushFileBuffers(std::fstream &fileS) override;
-    std::string _GetCurrentDirectory() override;
-    std::string _GetExecutableDirectory() override;
-    std::uintmax_t _GetFileSize(const char *filename) override;
-    void _SetCurrentDirectory(const char *pathName) override;
-    bool _CreateDirectory(const char *pathName) override;
-    std::uintmax_t _RemoveDirectory(const char *pathName) override;
-    bool LoadFile(const char *file_name, char **ppBuffer, uint32_t *dwSize) override;
+                                                         bool recursive = false);
+    std::filesystem::file_time_type _GetLastWriteTime(const char *filename);
+    void _FlushFileBuffers(std::fstream &fileS);
+    std::string _GetCurrentDirectory();
+    std::string _GetExecutableDirectory();
+    std::uintmax_t _GetFileSize(const char *filename);
+    void _SetCurrentDirectory(const char *pathName);
+    bool _CreateDirectory(const char *pathName);
+    std::uintmax_t _RemoveDirectory(const char *pathName);
+    bool LoadFile(const char *file_name, char **ppBuffer, uint32_t *dwSize);
     // ini files section
     void Close();
-    std::unique_ptr<INIFILE> CreateIniFile(const char *file_name, bool fail_if_exist) override;
-    std::unique_ptr<INIFILE> OpenIniFile(const char *file_name) override;
+    std::unique_ptr<INIFILE> CreateIniFile(const char *file_name, bool fail_if_exist);
+    std::unique_ptr<INIFILE> OpenIniFile(const char *file_name);
     void RefDec(INIFILE *ini_obj);
     void FlushIniFiles();
 
     // Resource paths
     void AddEntryToResourcePaths(const std::filesystem::directory_entry &entry, std::string &CheckingPath);
-    void ScanResourcePaths() override;
-    std::string ConvertPathResource(const char *path) override;
+    void ScanResourcePaths();
+    std::string ConvertPathResource(const char *path);
 
-    uint64_t GetPathFingerprint(const std::filesystem::path &path) override;
+    uint64_t GetPathFingerprint(const std::filesystem::path &path);
 };
+
+extern FILE_SERVICE *fio;

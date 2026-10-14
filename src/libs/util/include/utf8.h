@@ -114,7 +114,7 @@ inline int Utf8ToCodepoint(const char *utf8)
     if (u0 >= 0xC0 && u0 <= 0xDF)
         return (u0 - 192) * 64 + (u1 - 128);
 
-    if (utf8[0] == 0xed && (utf8[1] & 0xa0) == 0xa0)
+    if (u0 == 0xed && (u1 & 0xa0) == 0xa0)
         return -1; // code points, 0xd800 to 0xdfff
 
     if (l < 3)
@@ -131,12 +131,12 @@ inline int Utf8ToCodepoint(const char *utf8)
     return -1;
 }
 
-inline int Utf8StringLength(const char *s)
+inline int Utf8StringLength(const std::string_view &s)
 {
     int32_t s_num = 0;
-    while (*s)
-        s_num += (*s++ & 0xC0) != 0x80;
-
+    for (const char c : s) {
+        s_num += (c & 0xC0) != 0x80;
+    }
     return s_num;
 }
 

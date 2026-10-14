@@ -27,4 +27,9 @@
 #define WORLDMAP_ENCOUNTER_TYPE_STORM 4
 #define WORLDMAP_ENCOUNTER_TYPE_INVALID 2147483647 // INT32_MAX = 0x7fffffff
 
+// Combat
+#define LAI_CHARACTER_HIT_DODGE 0 // Attack was dodged, no damage will be taken
+#define LAI_CHARACTER_HIT_SOFT  1 // Damage will be taken, but will not interrupt actions
+#define LAI_CHARACTER_HIT_HARD  2 // Damage will be taken, and current action will be interrupted
+
 #endif

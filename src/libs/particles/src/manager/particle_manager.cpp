@@ -25,7 +25,7 @@ ParticleManager::ParticleManager(ParticleService *service) : IParticleManager(se
     BB_Processor = new BillBoardProcessor;
     GlobalDelete = false;
     TimeFromLastStatUpdate = 100.0f;
-    pRS = static_cast<VDX9RENDER *>(core.GetService("DX9Render"));
+    pRS = core.GetServiceX<VDX9RENDER>();
     Assert(pRS != NULL);
 
     pDataCache = new DataCache(this);
@@ -38,7 +38,7 @@ ParticleManager::ParticleManager(ParticleService *service) : IParticleManager(se
 ParticleManager::~ParticleManager()
 {
     DeleteAllSystems();
-    pRS = static_cast<VDX9RENDER *>(core.GetService("DX9Render"));
+    pRS = core.GetServiceX<VDX9RENDER>();
     if (pProjectTexture >= 0 && pRS != nullptr)
     {
         pRS->TextureRelease(pProjectTexture);
@@ -87,7 +87,7 @@ void ParticleManager::SetProjectTexture(const char *FileName)
     pProjectTexture = pRS->TextureCreate(FileName);
 
     const std::filesystem::path path = FileName;
-    pProjectTextureNormalMap = pRS->TextureCreate((path.stem().string() + "nm").c_str());
+     pProjectTextureNormalMap = pRS->TextureCreate((path.stem().string() + "nm.tga").c_str());
 
     TextureName = FileName;
 }

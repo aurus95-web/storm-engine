@@ -1,25 +1,16 @@
 #pragma once
 
-#include "entity.h"
-#include "vai_objbase.h"
 #include "core.h"
-#include "vma.hpp"
+#include "vai_objbase.h"
 
-class COMMON_CAMERA : public Entity
+#include <storm/renderer/camera.hpp>
+
+class COMMON_CAMERA : public storm::Camera
 {
-  private:
-    bool bActive;
-    bool bOn;
-
-    float fPerspective;
-
-    entid_t eidObject;
-    VAI_OBJBASE *pAIObj;
-
-  protected:
-    ATTRIBUTES *pACharacter;
-
   public:
+    COMMON_CAMERA() = default;
+    ~COMMON_CAMERA() override = default;
+
     bool FindShip()
     {
         Assert(pACharacter);
@@ -37,6 +28,8 @@ class COMMON_CAMERA : public Entity
         }
         return false;
     }
+
+    uint64_t ProcessMessage(MESSAGE &msg) override;
 
     MODEL *GetModelPointer() const
     {
@@ -56,59 +49,37 @@ class COMMON_CAMERA : public Entity
     void SetEID(entid_t pEID)
     {
         eidObject = pEID;
-    };
+    }
 
     entid_t GetEID() const
     {
         return eidObject;
-    };
+    }
 
     virtual void SetCharacter(ATTRIBUTES *_pACharacter)
     {
         pACharacter = _pACharacter;
-    };
+    }
 
     void SetPerspective(float _fPerspective)
     {
         fPerspective = _fPerspective;
-    };
+    }
 
     float GetPerspective() const
     {
         return fPerspective;
-    };
-
-    void SetOn(bool bOnOff)
-    {
-        bOn = bOnOff;
-    };
-
-    void SetActive(bool bNewActive)
-    {
-        bActive = bNewActive;
-    };
-
-    bool isOn() const
-    {
-        return bOn;
-    };
-
-    bool isActive() const
-    {
-        return bActive;
-    };
+    }
 
     virtual void Save(CSaveLoad *pSL) = 0;
     virtual void Load(CSaveLoad *pSL) = 0;
 
-    COMMON_CAMERA()
-        : eidObject(0), pAIObj(nullptr), pACharacter(nullptr)
-    {
-        bOn = false;
-        bActive = false;
-        fPerspective = 1.285f;
-    }
-    ;
+  protected:
+    ATTRIBUTES *pACharacter = nullptr;
 
-    ~COMMON_CAMERA() override{};
+    float fPerspective{1.285f};
+
+  private:
+    entid_t eidObject{invalid_entity};
+    VAI_OBJBASE *pAIObj = nullptr;
 };

@@ -93,6 +93,8 @@ class InterfaceBackScene : public Entity
 
     std::vector<LightParam *> m_aLights;
 
+    std::string texturePath_;
+
     struct MenuDescr
     {
         bool bSelectable;

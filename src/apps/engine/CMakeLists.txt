@@ -31,10 +31,13 @@ STORM_SETUP(
 
     # external
     mimalloc
-    sentry-native
+    sentry::sentry
     ${SDL2_LIBRARIES}
     zlib
+    CLI11::CLI11
 
     # system
     ${SYSTEM_DEPS}
 )
+
+add_dependencies(engine engine_techniques)

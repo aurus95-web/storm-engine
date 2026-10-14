@@ -4,6 +4,7 @@
 #include "core.h"
 #include "modelr.h"
 #include "string_compare.hpp"
+#include <storm/editor/storm_imgui.hpp>
 
 VGEOMETRY *NODER::gs = nullptr;
 VDX9RENDER *NODER::rs = nullptr;
@@ -589,4 +590,38 @@ void NODER::SubstituteGeometry(const std::string &new_model)
     sys_modelName_full = fmt::format("{}_{}", sys_modelName_base, new_model);
     ReleaseGeometry();
     RestoreGeometry();
+}
+
+void NODER::ShowEditorTree()
+{
+    ImGui::TextFmt("Model '{}'", name);
+    ImGui::TextFmt("Texture '{}'", sys_TexPath);
+    ImGui::TextFmt("Technique '{}'", technique);
+    bool visible = flags & NODE::FLAGS::VISIBLE;
+    if (ImGui::Checkbox("Visible", &visible) ) {
+        if (visible) {
+            flags |= NODE::FLAGS::VISIBLE;
+        } else {
+            flags &= ~NODE::FLAGS::VISIBLE;
+        }
+    }
+
+    std::string id = fmt::format("Noder {}", sys_modelName_full);
+    ImGui::PushID(id.c_str());
+    if (ImGui::InputFloat3("Geo center", &geo_center.x) ) {
+        center = geo_center;
+    }
+
+    if (next.size() > 0) {
+        if(ImGui::TreeNode("Children") ) {
+            for (int32_t l = 0; l < next.size(); l++)
+            {
+                if (next[l] != nullptr)
+                {
+                    static_cast<NODER *>(next[l])->ShowEditorTree();
+                }
+            }
+            ImGui::TreePop();
+        }
+    }
 }

@@ -13,17 +13,20 @@
 class CoreImpl final : public CorePrivate
 {
   public:
-    void Init();
+    void Init() override;
+    void InitializeEditor(IDirect3DDevice9 *device) override;
+    bool IsEditorEnabled() override;
+    void EnableEditor(bool enable) override;
 
-    void InitBase();
-    void ReleaseBase();
+    void InitBase() override;
+    void ReleaseBase() override;
 
-    void CleanUp();
+    void CleanUp() override;
 
     void SetWindow(std::shared_ptr<storm::OSWindow> window) override;
     bool Initialize();
     void ResetCore();
-    bool Run();
+    bool Run() override;
     bool LoadClassesTable();
 
     void ProcessExecute();
@@ -43,9 +46,9 @@ class CoreImpl final : public CorePrivate
     void EraseEntities();
     void ClearEvents();
     void *MakeClass(const char *class_name);
-    void AppState(bool state);
-    uint32_t MakeHashValue(const char *string);
-    VMA *FindVMA(const char *class_name);
+    void AppState(bool state) override;
+    uint32_t MakeHashValue(std::string_view string);
+    VMA *FindVMA(std::string_view class_name);
     VMA *FindVMA(int32_t hash);
     //------------------------------------------------------------------------------------------------
     // API functions : (virtual API)
@@ -65,7 +68,7 @@ class CoreImpl final : public CorePrivate
     void Trace(const char *Format, ...) override;
 
     // return service object pointer;
-    void *GetService(const char *service_name) override;
+    void *GetService(std::string_view service_name) override;
 
     ATTRIBUTES *Entity_GetAttributeClass(entid_t id_PTR, const char *name) override;
     const char *Entity_GetAttribute(entid_t id_PTR, const char *name) override;
@@ -133,9 +136,13 @@ class CoreImpl final : public CorePrivate
     bool IsLayerFrozen(layer_index_t index) const override;
     void ForEachEntity(const std::function<void(entptr_t)>& f) override;
 
-    void collectCrashInfo() const;
+    storm::editor::EngineEditor *GetEditor() override;
 
-    [[nodiscard]] bool initialized() const
+    void collectCrashInfo() const override;
+
+    void collectCallStack() const override;
+
+    [[nodiscard]] bool initialized() const override
     {
         return Initialized;
     }
@@ -148,10 +155,14 @@ class CoreImpl final : public CorePrivate
 
 private:
     void loadCompatibilitySettings(INIFILE &inifile);
+    void determineScreenSize(INIFILE &inifile);
 
     EntityManager entity_manager_;
 
+    std::unique_ptr<storm::editor::EngineEditor> editor_;
+
     storm::ENGINE_VERSION targetVersion_ = storm::ENGINE_VERSION::LATEST;
+    ScreenSize screenSize_;
 
     bool stopFrameProcessing_ = false;
 
@@ -164,6 +175,7 @@ private:
     char gstring[MAX_PATH]{}; // general purpose string
     bool State_loading;
     bool bEnableTimeScale{};
+    bool isEditorEnabled_ = false;
 
     SERVICES_LIST Services_List; // list for subsequent calls RunStart/RunEnd service functions
 

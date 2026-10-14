@@ -183,13 +183,13 @@ void XINTERFACE::SetDevice()
     m_UtilContainer.Init();
 
     // get render service
-    pRenderService = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    pRenderService = core.GetServiceX<VDX9RENDER>();
     if (!pRenderService)
     {
         throw std::runtime_error("No service: dx9render");
     }
 
-    pStringService = static_cast<VSTRSERVICE *>(core.GetService("STRSERVICE"));
+    pStringService = core.GetServiceX<VSTRSERVICE>();
     if (!pStringService)
     {
         throw std::runtime_error("No service: strservice");
@@ -1000,7 +1000,10 @@ uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
             }
             else
             {
-                systTime = fio->_ToTimeT(fio->_GetLastWriteTime(param.c_str()));
+                const auto tp = fio->_GetLastWriteTime(param.c_str());
+                auto sctp = time_point_cast<std::chrono::system_clock::duration>(tp - std::filesystem::file_time_type::clock::now() +
+                                                                    std::chrono::system_clock::now());
+                systTime = std::chrono::system_clock::to_time_t(sctp);
             }
         }
         const auto locTime = std::localtime(&systTime);
@@ -1155,7 +1158,12 @@ void XINTERFACE::LoadIni()
     sscanf(param, "%[^,],%d,size:(%d,%d),pos:(%d,%d)", param2, &m_lMouseSensitive, &MouseSize.x, &MouseSize.y,
            &m_lXMouse, &m_lYMouse);
     m_idTex = pRenderService->TextureCreate(param2);
-    core.GetWindow()->WarpMouseInWindow(windowSize.width / 2, windowSize.height / 2);
+
+    if (auto *editor = core.GetEditor(); editor == nullptr || !editor->IsFocused())
+    {
+        core.GetWindow()->WarpMouseInWindow(windowSize.width / 2, windowSize.height / 2);
+    }
+
     fXMousePos = static_cast<float>(dwScreenWidth / 2);
     fYMousePos = static_cast<float>(dwScreenHeight / 2);
     for (int i = 0; i < 4; i++)
@@ -1164,10 +1172,7 @@ void XINTERFACE::LoadIni()
     vMouse[2].tu = vMouse[3].tu = 1.f;
     vMouse[0].tv = vMouse[2].tv = 0.f;
     vMouse[1].tv = vMouse[3].tv = 1.f;
-#ifdef _WIN32 // FIX_LINUX Cursor
-    ShowCursor(false);
-#endif
-
+    core.GetWindow()->ShowCursor(false);
     // set blind parameters
     m_fBlindSpeed = ini->GetFloat(section, "BlindTime", 1.f);
     if (m_fBlindSpeed <= 0.0001f)

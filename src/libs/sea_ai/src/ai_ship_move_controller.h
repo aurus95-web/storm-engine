@@ -25,8 +25,6 @@ class AIShipMoveController
 
     uint32_t dwCurPnt;
 
-    AIFlowGraph::VectorPath *pVPath;
-
   public:
     // init/execute/realize section
     virtual bool Init();

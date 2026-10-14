@@ -68,6 +68,8 @@ class Entity
         return {};
     }
 
+    virtual void ShowEditor();
+
   private:
     EntitySelfData data_{};
 };

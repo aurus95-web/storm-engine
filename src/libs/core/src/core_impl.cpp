@@ -7,7 +7,9 @@
 
 #include <fstream>
 
+#include "v_sound_service.h"
 #include "string_compare.hpp"
+
 #include <SDL2/SDL.h>
 
 Core &core = core_internal;
@@ -119,6 +121,30 @@ void CoreImpl::Init()
     SetLayerType(EDITOR_REALIZE, layer_type_t::realize);
     SetLayerType(INFO_REALIZE, layer_type_t::realize);
     SetLayerType(SOUND_DEBUG_REALIZE, layer_type_t::realize);
+
+    storm::editor::EngineEditor::RegisterEditorTool("Entities", [this] (bool &active) {
+        entity_manager_.ShowEditor(active);
+    });
+
+    storm::editor::EngineEditor::RegisterEditorTool("Sound Service", [this] (bool &active) {
+        auto* sound_service = GetServiceX<VSoundService>();
+        sound_service->ShowEditor(active);
+    });
+}
+
+void CoreImpl::InitializeEditor(IDirect3DDevice9 *device)
+{
+    editor_ = std::make_unique<storm::editor::EngineEditor>(GetWindow()->SDLHandle(), device);
+}
+
+bool CoreImpl::IsEditorEnabled()
+{
+    return isEditorEnabled_;
+}
+
+void CoreImpl::EnableEditor(bool enable)
+{
+    isEditorEnabled_ = enable;
 }
 
 void CoreImpl::InitBase()
@@ -280,17 +306,24 @@ void CoreImpl::ProcessEngineIniFile()
     }
 
     loadCompatibilitySettings(*engine_ini);
+    determineScreenSize(*engine_ini);
 
     res = engine_ini->ReadString(nullptr, "run", String, sizeof(String), "");
     if (res)
     {
         if (!Compiler->CreateProgram(String))
+        {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", "Failed to compile program.", nullptr);
             throw std::runtime_error("fail to create program");
+        }
         if (!Compiler->Run())
+        {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", "Failed to run program.", nullptr);
             throw std::runtime_error("fail to run program");
+        }
 
         // Script version test
-        if (targetVersion_ >= storm::ENGINE_VERSION::LATEST)
+        if (targetVersion_ == storm::ENGINE_VERSION::TO_EACH_HIS_OWN)
         {
             int32_t iScriptVersion = 0xFFFFFFFF;
             auto *pVScriptVersion = static_cast<VDATA *>(core_internal.GetScriptVariable("iScriptVersion"));
@@ -299,9 +332,7 @@ void CoreImpl::ProcessEngineIniFile()
 
             if (iScriptVersion != ENGINE_SCRIPT_VERSION)
             {
-#ifdef _WIN32 // FIX_LINUX Cursor
-                ShowCursor(true);
-#endif
+                GetWindow()->ShowCursor(true);
                 SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", "Wrong script version", nullptr);
                 Compiler->ExitProgram();
             }
@@ -463,7 +494,7 @@ void CoreImpl::ReleaseServices()
     Controls = nullptr;
 }
 
-VMA *CoreImpl::FindVMA(const char *class_name)
+VMA *CoreImpl::FindVMA(const std::string_view class_name)
 {
     const int32_t hash = MakeHashValue(class_name);
     for (auto *const c : __STORM_CLASSES_REGISTRY)
@@ -482,7 +513,7 @@ VMA *CoreImpl::FindVMA(int32_t hash)
     return nullptr;
 }
 
-void *CoreImpl::GetService(const char *service_name)
+void *CoreImpl::GetService(const std::string_view service_name)
 {
     auto *pClass = FindVMA(service_name);
     if (pClass == nullptr)
@@ -757,7 +788,7 @@ void CoreImpl::Entity_SetAttributePointer(entid_t id_PTR, ATTRIBUTES *pA)
 
 uint32_t CoreImpl::Entity_AttributeChanged(entid_t id_PTR, ATTRIBUTES *pA)
 {
-    Entity *pE = GetEntityPointer(id_PTR);
+    Entity *pE = GetEntityPointerSafe(id_PTR);
     if (pE == nullptr)
         return 0;
     return pE->AttributeChanged(pA);
@@ -787,13 +818,12 @@ void CoreImpl::AppState(bool state)
         Controls->AppState(state);
 }
 
-uint32_t CoreImpl::MakeHashValue(const char *string)
+uint32_t CoreImpl::MakeHashValue(const std::string_view string)
 {
     uint32_t hval = 0;
 
-    while (*string != 0)
+    for (char v : string)
     {
-        char v = *string++;
         if ('A' <= v && v <= 'Z')
             v += 'a' - 'A';
 
@@ -926,15 +956,7 @@ storm::ENGINE_VERSION CoreImpl::GetTargetEngineVersion() const noexcept
 
 ScreenSize CoreImpl::GetScreenSize() const noexcept
 {
-    switch (targetVersion_)
-    {
-    case storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN: {
-        return {640, 480};
-    }
-    default: {
-        return {800, 600};
-    }
-    }
+    return screenSize_;
 }
 
 void CoreImpl::stopFrameProcessing()
@@ -1022,7 +1044,17 @@ void CoreImpl::ForEachEntity(const std::function<void(entptr_t)> &f)
     entity_manager_.ForEachEntity(f);
 }
 
+storm::editor::EngineEditor *CoreImpl::GetEditor()
+{
+    return editor_.get();
+}
+
 void CoreImpl::collectCrashInfo() const
+{
+    Compiler->CollectCallStack();
+}
+
+void CoreImpl::collectCallStack() const
 {
     Compiler->CollectCallStack();
 }
@@ -1041,4 +1073,17 @@ void CoreImpl::loadCompatibilitySettings(INIFILE &inifile)
         spdlog::warn("Unknown target version '{}' in engine compatibility settings", target_engine_version);
         targetVersion_ = ENGINE_VERSION::LATEST;
     }
+}
+
+void CoreImpl::determineScreenSize(INIFILE &inifile)
+{
+    if (targetVersion_ <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN) {
+        screenSize_ = {640, 480};
+    }
+    else {
+        screenSize_ = {800, 600};
+    }
+
+    screenSize_.width = inifile.GetInt("interface", "screen_width", screenSize_.width);
+    screenSize_.height = inifile.GetInt("interface", "screen_height", screenSize_.height);
 }

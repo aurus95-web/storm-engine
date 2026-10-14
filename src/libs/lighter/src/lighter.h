@@ -56,7 +56,6 @@ class Lighter : public Entity
     void MsgAddLight(MESSAGE &message);
     void PreparingData();
 
-  private:
     VDX9RENDER *rs;
 
     LGeometry geometry;
@@ -66,6 +65,8 @@ class Lighter : public Entity
     LightProcessor lightProcessor;
 
     int32_t initCounter;
-    float waitChange;
-    bool isInited, autoTrace, autoSmooth;
+    bool isInited;
+    bool autoTrace;
+    bool autoSmooth;
+    bool isDataPrepared_ = false;
 };

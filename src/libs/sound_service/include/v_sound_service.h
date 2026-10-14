@@ -4,6 +4,9 @@
 #include "service.h"
 #include "sound_defines.h"
 #include "v_sound_service.h"
+
+#include <optional>
+#include <string_view>
 #include <vector>
 
 ///////////////////////////////////////////////////////////////////
@@ -67,6 +70,8 @@ using tSoundStatistics = struct
 class VSoundService : public SERVICE
 {
   public:
+    constexpr static std::string_view ServiceName = "SoundService";
+
     bool Init() override = 0;
     uint32_t RunSection() override = 0;
     void RunStart() override = 0;
@@ -78,7 +83,25 @@ class VSoundService : public SERVICE
     // + play assumes _name a plain file name
     // + for now loop_pause_time works only for OGG-STEREO sounds
     ///////////////////////////////////////////////////////////////
-    virtual TSD_ID SoundPlay(const char *_name,
+    struct SoundPlayOptions
+    {
+        eSoundType type{eSoundType::MP3_STEREO};
+        eVolumeType volumeType{eVolumeType::VOLUME_FX};
+        std::optional<CVECTOR> startPosition{};
+        std::optional<float> minDistance{};
+        std::optional<float> maxDistance{};
+        float volume{1};
+        int32_t fadeInTime{0};
+        int32_t loopPauseTime{0};
+        int32_t priority{128};
+        std::optional<uint32_t> loopStart{};
+        std::optional<uint32_t> loopEnd{};
+        bool simpleCache{false};
+        bool looped{false};
+        bool cached{false};
+    };
+    virtual TSD_ID SoundPlay(const std::string_view &name, const SoundPlayOptions& options) = 0;
+    virtual TSD_ID SoundPlay(const std::string_view &name,
                              eSoundType _type,          // sound type
                              eVolumeType _volumeType,   // volume type
                              bool _simpleCache = false, // cache only, not play
@@ -115,6 +138,8 @@ class VSoundService : public SERVICE
     virtual void LoadAliasFile(const char *_filename) = 0;
 
     virtual void SetActiveWithFade(bool active) = 0;
+
+    virtual void ShowEditor(bool &active) = 0;
 
     tSoundStatistics soundStatistics;
 };

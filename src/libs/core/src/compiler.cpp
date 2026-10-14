@@ -14,6 +14,7 @@
 #include "fs.h"
 #include "logging.hpp"
 #include "script_cache.h"
+#include "storm/engine_settings.hpp"
 #include "storm_assert.h"
 
 #include <SDL_timer.h>
@@ -49,7 +50,7 @@ enum CacheMode : int
 
 auto GetCacheFolder()
 {
-    static std::filesystem::path cache_folder = fs::GetStashPath() / "Cache";
+    static std::filesystem::path cache_folder = storm::GetEngineSettings().GetEnginePath(storm::EngineSettingsPathType::ScriptCache);
     return cache_folder;
 }
 constexpr auto kCacheStateFile = "state";
@@ -4456,6 +4457,7 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
             pVResult = nullptr;
             if (!BC_CallFunction(func_code, ip, pVResult))
                 return false;
+            ExpressionResult.ClearType();
             if (pVResult)
             {
                 ExpressionResult.Set(1);
@@ -6341,7 +6343,7 @@ bool COMPILER::ReadVariable(char *name, /* DWORD code,*/ bool bDim, uint32_t a_i
                 else if (eType == S_TOKEN_TYPE::VAR_OBJECT)
                 {
                     ReadData(nullptr, sizeof(uint64_t));
-                    ATTRIBUTES TA(&SCodec);
+                    ATTRIBUTES TA(SCodec);
                     ReadAttributesData(&TA, nullptr);
                 }
                 else
@@ -6391,12 +6393,12 @@ bool COMPILER::ReadVariable(char *name, /* DWORD code,*/ bool bDim, uint32_t a_i
             pV->Set(eid);
 
             if (pV->AttributesClass == nullptr)
-                pV->AttributesClass = new ATTRIBUTES(&SCodec);
+                pV->AttributesClass = new ATTRIBUTES(SCodec);
             ReadAttributesData(pV->AttributesClass, nullptr);
         }
         else
         {
-            ATTRIBUTES *pTA = new ATTRIBUTES(&SCodec);
+            ATTRIBUTES *pTA = new ATTRIBUTES(SCodec);
             ReadAttributesData(pTA, nullptr);
             delete pTA;
         }
@@ -6450,7 +6452,7 @@ bool COMPILER::ReadVariable(char *name, /* DWORD code,*/ bool bDim, uint32_t a_i
         }
 
         if (pVRef->AttributesClass == nullptr)
-            pVRef->AttributesClass = new ATTRIBUTES(&SCodec);
+            pVRef->AttributesClass = new ATTRIBUTES(SCodec);
         if (pString)
         {
             pA = pVRef->AttributesClass->CreateSubAClass(pVRef->AttributesClass, pString);
@@ -6533,6 +6535,10 @@ void COMPILER::SaveVariable(DATA *pV, bool bdim)
         break;
     case VAR_OBJECT:
         pV->Get(eid);
+        if (!core.IsEntityValid(eid))
+        {
+            eid = invalid_entity;
+        }
         SaveData(&eid, sizeof(eid));
         SaveAttributesData(pV->AttributesClass);
         break;

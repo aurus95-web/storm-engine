@@ -3,7 +3,7 @@
 #include "core.h"
 #include "string_compare.hpp"
 
-#include "v_file_service.h"
+#include "file_service.h"
 
 #include <input.hpp>
 
@@ -49,6 +49,11 @@ PCS_CONTROLS::~PCS_CONTROLS()
     input_->Unsubscribe(inputHandlerID_);
     Release();
     // ClipCursor(0);
+}
+
+bool PCS_CONTROLS::Init()
+{
+    return true;
 }
 
 void PCS_CONTROLS::AppState(bool state)
@@ -434,9 +439,17 @@ bool PCS_CONTROLS::GetControlState(int32_t control_code, CONTROL_STATE &_state_s
 
 void PCS_CONTROLS::Update(uint32_t DeltaTime)
 {
+    if (auto *editor = core.GetEditor(); editor != nullptr && editor->IsFocused()) {
+        // Skip control processing
+        nMouseDx = 0;
+        nMouseDy = 0;
+        return;
+    }
+
 #ifdef _WIN32
     static int nMouseXPrev, nMouseYPrev;
-    if (updateCursor_) {
+    if (updateCursor_)
+    {
         POINT point;
         GetCursorPos(&point);
 
@@ -449,7 +462,8 @@ void PCS_CONTROLS::Update(uint32_t DeltaTime)
         nMouseYPrev = r.top + (r.bottom - r.top) / 2;
         SetCursorPos(nMouseXPrev, nMouseYPrev);
     }
-    else {
+    else
+    {
         nMouseDx = 0;
         nMouseDy = 0;
     }

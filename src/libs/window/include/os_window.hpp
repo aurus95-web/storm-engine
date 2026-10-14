@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 
+struct SDL_Window;
+
 namespace storm
 {
 struct WindowSize
@@ -62,6 +64,8 @@ class OSWindow
     //! Set window gamma
     virtual void SetGamma(const uint16_t (&red)[256], const uint16_t (&green)[256], const uint16_t (&blue)[256]) = 0;
 
+    virtual void ShowCursor(bool show_cursor) = 0;
+
     //! Subscribe for events
     //! \param handler event callback
     //! \return subscription id, which should be passed to unsubscribe()
@@ -72,6 +76,7 @@ class OSWindow
 
     //! Os-depended window handler (i.e. HWND on Windows)
     virtual void *OSHandle() = 0;
+    virtual SDL_Window *SDLHandle() const = 0;
 
     //! Create new window
     static std::shared_ptr<OSWindow> Create(int width, int height, int preferred_display, bool fullscreen,

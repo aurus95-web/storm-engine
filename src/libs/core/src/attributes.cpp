@@ -1,11 +1,8 @@
 #include "attributes.h"
 
-#include "string_compare.hpp"
-#include "platform/platform.hpp"
+#include <execution>
 
-ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC *p): ATTRIBUTES(*p)
-{
-}
+#include "string_compare.hpp"
 
 ATTRIBUTES::ATTRIBUTES(ATTRIBUTES &&other) noexcept
     : stringCodec_(other.stringCodec_), nameCode_(other.stringCodec_.Convert("root")), value_(std::move(other.value_)),
@@ -18,17 +15,22 @@ ATTRIBUTES & ATTRIBUTES::operator=(ATTRIBUTES &&other) noexcept
     stringCodec_ = other.stringCodec_;
     // Do not update name code
     // nameCode_ = other.nameCode_;
+    other.nameCode_ = 1337;
     value_ = std::move(other.value_);
     attributes_ = std::move(other.attributes_);
+    for (const auto &attribute : attributes_)
+        attribute->parent_ = this;
     // Do not update parent
     // parent_ = other.parent_;
+    other.parent_ = (ATTRIBUTES*)0x1;
     break_ = other.break_;
     return *this;
 }
 
 ATTRIBUTES::~ATTRIBUTES()
 {
-    Release();
+    if (break_)
+        stringCodec_.VariableChanged();
 }
 
 void ATTRIBUTES::SetBreak(bool set_break)
@@ -152,6 +154,13 @@ ATTRIBUTES::LegacyProxy ATTRIBUTES::GetAttribute(const std::string_view &name) c
     return {};
 }
 
+bool ATTRIBUTES::HasAttribute(const std::string_view &name) const
+{
+    return std::any_of(begin(attributes_), end(attributes_), [&name] (const auto &attribute) -> bool {
+        return storm::iEquals(name, attribute->GetThisName());
+    });
+}
+
 uint32_t ATTRIBUTES::GetAttributeAsDword(const char *name, uint32_t def) const
 {
     uint32_t vDword = def;
@@ -258,19 +267,14 @@ bool ATTRIBUTES::DeleteAttributeClassX(ATTRIBUTES *pA)
     }
     else
     {
-        //            auto removed_it = std::remove_if(pAttributes.begin(), pAttributes.end(), [&](const auto&
-        //            item){
-        //                return item.get() == pA;
-        //            });
-        //            return removed_it != pAttributes.end();
         for (uint32_t n = 0; n < attributes_.size(); n++)
         {
-            if (attributes_[n].get() == pA)
+            auto it = std::remove_if(attributes_.begin(), attributes_.end(), [&pA](const auto &attr) {
+                return attr.get() == pA;
+            });
+            if (it != attributes_.end() )
             {
-                for (auto i = n; i < attributes_.size() - 1; i++)
-                    attributes_[i] = std::move(attributes_[i + 1]);
-
-                attributes_.pop_back();
+                attributes_.erase(it);
                 return true;
             }
             if (attributes_[n]->DeleteAttributeClassX(pA))
@@ -439,6 +443,12 @@ VSTRING_CODEC & ATTRIBUTES::GetStringCodec() const noexcept
     return stringCodec_;
 }
 
+void ATTRIBUTES::Sort(
+    const std::function<bool(const std::unique_ptr<ATTRIBUTES> &, const std::unique_ptr<ATTRIBUTES> &)>& pred)
+{
+    std::sort(std::execution::seq, std::begin(attributes_), std::end(attributes_), pred);
+}
+
 ATTRIBUTES * ATTRIBUTES::CreateNewAttribute(uint32_t name_code)
 {
     const std::unique_ptr<ATTRIBUTES> &attr = attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name_code));
@@ -473,8 +483,25 @@ ATTRIBUTES ATTRIBUTES::Copy() const
     return result;
 }
 
-void ATTRIBUTES::Release() const noexcept
+// MatchAttributePath("equipment.*.locator", attribute)
+bool MatchAttributePath(const std::string_view &pattern, const ATTRIBUTES &attribute)
 {
-    if (break_)
-        stringCodec_.VariableChanged();
+    const ATTRIBUTES *current_attribute = &attribute;
+    std::string_view remaining_pattern = pattern;
+    size_t last_separator = remaining_pattern.size();
+    while(last_separator != pattern.npos)
+    {
+        last_separator = remaining_pattern.find_last_of('.');
+        std::string_view section = remaining_pattern.substr( last_separator + 1);
+        remaining_pattern = remaining_pattern.substr(0, last_separator);
+        const ATTRIBUTES *parent = current_attribute->GetParent();
+        if (parent == nullptr) {
+            return false;
+        }
+        if (section != "*" && !storm::iEquals(section, current_attribute->GetThisName() ) ) {
+            return false;
+        }
+        current_attribute = parent;
+    }
+    return current_attribute != nullptr && current_attribute->GetParent() == nullptr;
 }

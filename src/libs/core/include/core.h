@@ -12,7 +12,9 @@
 #include "platform/platform.hpp"
 #include "shared/layers.h"
 #include "v_data.h"
-#include "v_file_service.h"
+#include "file_service.h"
+
+#include <storm/editor/engine_editor.hpp>
 
 struct IFUNCINFO;
 
@@ -51,6 +53,12 @@ class Core
   public:
     virtual ~Core() = default;
 
+    virtual void InitializeEditor(IDirect3DDevice9 *device) = 0;
+    virtual bool IsEditorEnabled() = 0;
+
+    // Log the script call stack.
+    virtual void collectCallStack() const = 0;
+
     // return application window
     virtual storm::OSWindow *GetWindow() = 0;
     // set time scale; affect on std entity functions DeltaTime parameter
@@ -58,7 +66,13 @@ class Core
     // write message to system log file
     virtual void Trace(const char *Format, ...) = 0;
     // return service object pointer;
-    virtual void *GetService(const char *service_name) = 0;
+    virtual void *GetService(std::string_view service_name) = 0;
+
+    template<typename T>
+    T* GetServiceX()
+    {
+        return static_cast<T*>(GetService(T::ServiceName));
+    }
 
     virtual ATTRIBUTES *Entity_GetAttributeClass(entid_t id_PTR, const char *name) = 0;
     virtual const char *Entity_GetAttribute(entid_t id_PTR, const char *name) = 0;
@@ -130,6 +144,8 @@ class Core
     virtual hash_t GetClassCode(entid_t id) const = 0;
     virtual bool IsLayerFrozen(layer_index_t index) const = 0;
     virtual void ForEachEntity(const std::function<void(entptr_t)> &f) = 0;
+
+    [[nodiscard]] virtual storm::editor::EngineEditor *GetEditor() = 0;
 
     CONTROLS *Controls{};
 };

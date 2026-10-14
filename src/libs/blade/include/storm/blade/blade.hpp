@@ -1,18 +1,11 @@
-/******************************************************************************
-File:  blade.h
-
-Author:   Nick Chirkov
-
-Comments:
-model binded to an animated locator
-******************************************************************************/
 #pragma once
 
 #include "collide.h"
 #include "dx9render.h"
 #include "model.h"
 
-#define BLADE_INFO_QUANTITY 2
+#include <array>
+
 #define ITEMS_INFO_QUANTITY 10
 
 class BLADE : public Entity
@@ -29,19 +22,25 @@ class BLADE : public Entity
 
     struct BLADE_INFO
     {
-        entid_t eid;
         int32_t color[2];               //    color of the blade
         float defLifeTime, lifeTime; //
         float time;                  // current time
 
         VERTEX vrt[WAY_LENGTH * 2]; // 16 stripped quads
         float vrtTime[WAY_LENGTH];
-        const char *locatorName;
 
         BLADE_INFO();
         ~BLADE_INFO();
         void DrawBlade(VDX9RENDER *rs, unsigned int blendValue, MODEL *mdl, NODE *manNode);
         bool LoadBladeModel(MESSAGE &message);
+
+        std::string id_;
+        std::string locatorName_;
+        std::string locatorNameActive_;
+
+        entid_t parentEntityId_;
+
+        bool active_ = false;
     };
 
     struct TIEITEM_INFO
@@ -72,10 +71,12 @@ class BLADE : public Entity
     entid_t man;
     unsigned int blendValue;
 
-    BLADE_INFO blade[BLADE_INFO_QUANTITY];
+    std::array<BLADE_INFO, 2> blades_;
 
     entid_t gun;
-    const char *gunLocName;
+    std::string gunLocator_;
+    std::string gunLocatorActive_;
+    bool isGunActive_ = false;
 
     TIEITEM_INFO items[ITEMS_INFO_QUANTITY];
 
@@ -97,21 +98,17 @@ class BLADE : public Entity
     {
         switch (stage)
         {
-            // case Stage::execute:
-            //    Execute(delta);
-            //    break;
         case Stage::realize:
             Realize(delta);
             break;
-            // case Stage::lost_render:
-            //    LostRender();
-            //    break;
-            // case Stage::restore_render:
-            //    RestoreRender();
-            //    break;
         }
     }
 
     void Realize(uint32_t Delta_Time);
     uint64_t ProcessMessage(MESSAGE &message) override;
+
+    void SetEquipmentLocator(const std::string_view &equipment_id, const std::string_view &locator_name);
+    void SetEquipmentActiveLocator(const std::string_view &equipment_id, const std::string_view &locator_name);
+
+    void ShowEditor() override;
 };

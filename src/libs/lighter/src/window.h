@@ -100,6 +100,9 @@ class Window
     bool isFailedInit;
     bool isSmallSlider;
 
+    void SavePreset(int32_t prs);
+    void LoadPreset(int32_t prs);
+
     // --------------------------------------------------------------------------------------------
     // Encapsulation
     // --------------------------------------------------------------------------------------------
@@ -116,9 +119,6 @@ class Window
     bool Button(float x, float y, float w, float h, const char *text, int32_t *act = nullptr, int32_t init = -1);
     void Checker(float x, float y, const char *text, bool &res);
     int32_t SelPreset();
-
-    void SavePreset(int32_t prs);
-    void LoadPreset(int32_t prs);
 
     char *GenerateName(const char *f, const char *n);
 

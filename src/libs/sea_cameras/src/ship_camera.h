@@ -42,22 +42,8 @@ class SHIP_CAMERA : public COMMON_CAMERA
 
     bool Init() override;
     void SetDevices();
-    void Execute(uint32_t dwDeltaTime);
-    void Realize(uint32_t dwDeltaTime) const;
-
-    void ProcessStage(Stage stage, uint32_t delta) override
-    {
-        switch (stage)
-        {
-        case Stage::execute:
-            Execute(delta);
-            break;
-        case Stage::realize:
-            Realize(delta);
-            break;
-        default: ;
-        }
-    }
+    void Execute(uint32_t real_delta) override;
+    // void Realize(uint32_t dwDeltaTime) const;
 
     void SetCharacter(ATTRIBUTES *_pACharacter) override;
 

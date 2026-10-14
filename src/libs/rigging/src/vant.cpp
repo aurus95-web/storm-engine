@@ -4,7 +4,7 @@
 #include "math_inlines.h"
 #include "shared/sail_msg.h"
 #include "ship_base.h"
-#include "v_file_service.h"
+#include "file_service.h"
 
 static const char *RIGGING_INI_FILE = "resource\\ini\\rigging.ini";
 
@@ -58,7 +58,7 @@ bool VANT_BASE::Init()
 void VANT_BASE::SetDevice()
 {
     // get render service
-    RenderService = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    RenderService = core.GetServiceX<VDX9RENDER>();
     if (!RenderService)
     {
         throw std::runtime_error("No service: dx9render");

@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include <storm/renderer/camera.hpp>
+#include "camera_follow.h"
+
 #include "matrix.h"
 #include "path_tracks.h"
 #include "dx9render.h"
@@ -17,13 +20,12 @@
 #include <string>
 #include <vector>
 
-#include "camera_follow.h"
 
 class MODEL;
 class Character;
 class Location;
 
-class LocationCamera : public Entity
+class LocationCamera : public storm::Camera
 {
     friend CameraFollow;
 
@@ -48,29 +50,12 @@ class LocationCamera : public Entity
     // Initialization
     bool Init() override;
     // Execution
-    void Execute(uint32_t delta_time);
-    void Realize(uint32_t delta_time);
+    void Execute(uint32_t real_delta);
+    // void Realize(uint32_t delta_time);
     // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
     // Changing an attribute
     uint32_t AttributeChanged(ATTRIBUTES *apnt) override;
-
-    void ProcessStage(Stage stage, uint32_t delta) override
-    {
-        switch (stage)
-        {
-        case Stage::execute:
-            Execute(delta);
-            break;
-        case Stage::realize:
-            Realize(delta);
-            break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
-        }
-    }
 
     void LockFPMode(bool isLock);
     float GetAx() const;
@@ -101,7 +86,6 @@ class LocationCamera : public Entity
     void Clip(PLANE *p, int32_t numPlanes, CVECTOR &cnt, float rad, bool (*fnc)(const CVECTOR *vtx, int32_t num)) const;
 
   private:
-    VDX9RENDER *rs;
     // The sea
     entid_t sea;
     // Camera parameters

@@ -56,20 +56,15 @@ void SUNGLOW::SetDevice()
 {
     entid_t ent;
 
-    pRS = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    pRS = core.GetServiceX<VDX9RENDER>();
     Assert(pRS);
-    pCollide = static_cast<COLLIDE *>(core.GetService("COLL"));
+    pCollide = core.GetServiceX<COLLIDE>();
     Assert(pCollide);
 
     if (!(ent = core.GetEntityId("weather")))
         throw std::runtime_error("No found WEATHER entity!");
     pWeather = static_cast<WEATHER_BASE *>(core.GetEntityPointer(ent));
     Assert(pWeather);
-
-    if (ent = core.GetEntityId("sky"))
-        pSky = static_cast<SKY *>(core.GetEntityPointer(ent));
-    else
-        pSky = nullptr;
 
     if (idRectBuf == -1)
         idRectBuf = pRS->CreateVertexBuffer(SUNGLOWVERTEX_FORMAT, sizeof(SUNGLOWVERTEX) * 8, D3DUSAGE_WRITEONLY);
@@ -743,9 +738,6 @@ void SUNGLOW::DrawRect(uint32_t dwColor, const CVECTOR &pos, float fSize, float 
 float SUNGLOW::GetSunFadeoutFactor(const CVECTOR &vSunPos, float fSunSize)
 {
     // get a pointer to the sky
-    if (!pSky)
-    {
-        pSky = static_cast<SKY *>(core.GetEntityPointer(core.GetEntityId("sky")));
-    }
-    return pSky ? pSky->CalculateAlphaForSun(vSunPos, fSunSize) : 1.0f;
+    auto* sky = static_cast<SKY *>(core.GetEntityPointerSafe(core.GetEntityId("sky")));
+    return sky ? sky->CalculateAlphaForSun(vSunPos, fSunSize) : 1.0f;
 }

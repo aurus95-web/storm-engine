@@ -1,4 +1,30 @@
-#include "worldmap_shader.h"
+float4x4 projectionMatrix;
+float3x4 cloudMatrix;
+
+struct VS_OUTPUT
+{
+    float4 position : POSITION;
+    float4 diffuse : COLOR0;
+    float4 specular : COLOR1;
+    float4 uv0 : TEXCOORD0;
+    float4 uv1 : TEXCOORD1;
+};
+
+VS_OUTPUT main(float4 vPosition: POSITION, float4 vColor: COLOR, float4 vTexCoord: TEXCOORD) {
+    VS_OUTPUT vOut = (VS_OUTPUT)0;
+
+    vOut.position = mul(vPosition, projectionMatrix);
+    vOut.diffuse = vColor.xxxw;
+    vOut.specular = vColor.yyyw * cloudMatrix[2];
+    vOut.uv0 = vTexCoord;
+    float cloud_min_size = cloudMatrix[1].x;
+    float cloud_scale = cloudMatrix[1].z;
+    float cloud_size = vColor.z * cloud_scale + cloud_min_size;
+    float view_angle = dot(normalize(vPosition), normalize(cloudMatrix[0]));
+    vOut.uv1 = view_angle * rcp(cloud_size) + cloudMatrix[1].w;
+
+    return vOut;
+}
 
 technique WdmModelDrawStd
 {
@@ -136,7 +162,7 @@ technique WdmClouds
         AddressU[1] = clamp;
         AddressV[1] = clamp;
 
-        VertexShader = SHADER;
+        VertexShader = compile vs_1_1 main();
     }
 }
 
@@ -551,6 +577,7 @@ technique WdmIslandWaves
     {
         Lighting = false;
         FogEnable = false;
+        ZEnable = false;
         ZWriteEnable = false;
 
         AlphaTestEnable = false;
@@ -569,5 +596,27 @@ technique WdmIslandWaves
         AlphaArg1[0] = tfactor;
         AlphaArg2[0] = texture;
         AlphaOp[1] = disable;
+    }
+}
+
+technique WdmCompasShadow
+{
+    pass p0
+    {
+        Lighting = false;
+        FogEnable = false;
+        ZWriteEnable = false;
+
+        AlphaTestEnable = false;
+        AlphaBlendEnable = true;
+        SrcBlend = zero;
+        DestBlend = srccolor;
+
+        TextureFactor = 0x00000000;
+        ColorArg1[0] = tfactor;
+        ColorArg2[0] = texture;
+        ColorOp[0] = add;
+        ColorOp[1] = disable;
+        AlphaOp[0] = disable;
     }
 }

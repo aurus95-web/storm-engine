@@ -5,7 +5,7 @@
 #include "model.h"
 #include "rands.h"
 #include "shared/messages.h"
-#include "v_file_service.h"
+#include "file_service.h"
 //#pragma warning (disable : 4244)
 
 //--------------------------------------------------------------------
@@ -57,8 +57,8 @@ void TSeagulls::Init()
     startY = 0.f;
     LoadSettings();
 
-    renderService = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
-    soundService = static_cast<VSoundService *>(core.GetService("SoundService"));
+    renderService = core.GetServiceX<VDX9RENDER>();
+    soundService = core.GetServiceX<VSoundService>();
 
     if (!renderService)
         throw std::runtime_error("!Seagulls: No service: dx9render");

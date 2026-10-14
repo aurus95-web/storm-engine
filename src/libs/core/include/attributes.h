@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -22,16 +23,15 @@ class VSTRING_CODEC
     virtual void VariableChanged() = 0;
 };
 
+class ATTRIBUTES;
+
+bool MatchAttributePath(const std::string_view &pattern, const ATTRIBUTES &attribute);
+
 class ATTRIBUTES final
 {
-    // TODO: remove with another iteration of rewriting this
-    friend class COMPILER;
-
     class LegacyProxy;
 
   public:
-    [[deprecated("Pass StringCodec by reference instead")]] explicit ATTRIBUTES(VSTRING_CODEC *p);
-
     explicit ATTRIBUTES(VSTRING_CODEC &p);
     ATTRIBUTES(const ATTRIBUTES &) = delete;
     ATTRIBUTES(ATTRIBUTES &&other) noexcept;
@@ -56,6 +56,7 @@ class ATTRIBUTES final
     [[nodiscard]] ATTRIBUTES *VerifyAttributeClass(const std::string_view &name);
     [[nodiscard]] LegacyProxy GetAttribute(size_t n) const;
     [[nodiscard]] LegacyProxy GetAttribute(const std::string_view &name) const;
+    [[nodiscard]] bool HasAttribute(const std::string_view &name) const;
     [[nodiscard]] const char *GetAttributeName(size_t n) const;
     [[nodiscard]] uint32_t GetAttributeAsDword(const char *name = nullptr, uint32_t def = 0) const;
     [[nodiscard]] uintptr_t GetAttributeAsPointer(const char *name = nullptr, uintptr_t def = 0) const;
@@ -81,11 +82,12 @@ class ATTRIBUTES final
     void SetNameCode(uint32_t n) noexcept;
     [[nodiscard]] VSTRING_CODEC &GetStringCodec() const noexcept;
 
+    void Sort(const std::function<bool(const std::unique_ptr<ATTRIBUTES> &lhs, const std::unique_ptr<ATTRIBUTES> &rhs)>& pred);
+
 private:
     ATTRIBUTES(VSTRING_CODEC &string_codec, ATTRIBUTES *parent, const std::string_view &name);
     ATTRIBUTES(VSTRING_CODEC &string_codec, ATTRIBUTES *parent, uint32_t name_code);
 
-    void Release() const noexcept;
     ATTRIBUTES *CreateNewAttribute(uint32_t name_code);
 
     VSTRING_CODEC &stringCodec_;
@@ -136,4 +138,3 @@ private:
         proxy_value_t proxy_value_;
     };
 };
-

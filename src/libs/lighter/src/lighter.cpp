@@ -26,7 +26,6 @@ Lighter::Lighter()
     rs = nullptr;
     initCounter = 10;
     isInited = false;
-    waitChange = 0.0f;
 }
 
 Lighter::~Lighter()
@@ -48,7 +47,7 @@ bool Lighter::Init()
     if (!isLoading)
         return false;
     // DX9 render
-    rs = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    rs = core.GetServiceX<VDX9RENDER>();
     if (!rs)
         throw std::runtime_error("No service: dx9render");
     //
@@ -88,28 +87,30 @@ void Lighter::Execute(uint32_t delta_time)
         window.Reset(true);
         PreparingData();
     }
-    if (waitChange <= 0.0f)
+
+    CONTROL_STATE cs;
+    core.Controls->GetControlState("LighterToggle", cs);
+
+    if (cs.state == CST_ACTIVATED)
     {
-        if (core.Controls->GetAsyncKeyState(VK_NUMPAD0) < 0)
+        if (isInited)
         {
-            waitChange = 0.5f;
-            if (isInited)
-            {
-                window.Reset(!window.isVisible);
-            }
-            else
-            {
-                window.isNeedInit = true;
-                isInited = true;
-            }
+            window.Reset(!window.isVisible);
+        }
+        else
+        {
+            window.isNeedInit = true;
+            isInited = true;
         }
     }
-    else
-        waitChange -= dltTime;
 }
 
 void Lighter::PreparingData()
 {
+    if (isDataPrepared_)
+    {
+        return;
+    }
     // Lighting
     // Scattered
     auto amb = 0xff404040;
@@ -163,6 +164,7 @@ void Lighter::PreparingData()
     window.InitList(lights);
     window.isTraceShadows = autoTrace;
     window.isSmoothShadows = autoSmooth;
+    isDataPrepared_ = true;
 }
 
 void Lighter::Realize(uint32_t delta_time)
@@ -203,6 +205,42 @@ uint64_t Lighter::ProcessMessage(MESSAGE &message)
     {
         // Adding the model
         MsgAddLight(message);
+        return true;
+    }
+    if (storm::iEquals(command, "LoadPreset"))
+    {
+        PreparingData();
+        const int32_t preset = message.Long();
+        window.LoadPreset(preset);
+        return true;
+    }
+    if (storm::iEquals(command, "SavePreset"))
+    {
+        PreparingData();
+        const int32_t preset = message.Long();
+        window.SavePreset(preset);
+        return true;
+    }
+    if (storm::iEquals(command, "Process"))
+    {
+        PreparingData();
+        window.isUpdateLight = true;
+        lightProcessor.Process();
+        if (message.ParamValid() ) {
+            window.isTraceShadows = message.Long() != 0;
+            lightProcessor.Process();
+        }
+        if (message.ParamValid() ) {
+            window.isSmoothShadows = message.Long() != 0;
+            lightProcessor.Process();
+        }
+        lightProcessor.Process();
+        return true;
+    }
+    if (storm::iEquals(command, "SaveLight"))
+    {
+        PreparingData();
+        geometry.Save();
         return true;
     }
     return false;

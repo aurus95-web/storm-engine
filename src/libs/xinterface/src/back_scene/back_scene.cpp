@@ -86,7 +86,7 @@ void InterfaceBackScene::MenuDescr::Set(CMatrix *pMtx, const char *pcActiveName,
     if (!pcTechniqueName)
         pcTechniqueName = "InterfaceBackScene_Menu";
     sEventName = pcEvent;
-    auto *pGeo = static_cast<VGEOMETRY *>(core.GetService("Geometry"));
+    auto *pGeo = core.GetServiceX<VGEOMETRY>();
     if (pGeo)
         if (pcPathName && pcPathName[0])
             pGeo->SetTexturePath((std::string("MainMenu\\") + pcPathName + "\\").c_str());
@@ -137,6 +137,8 @@ void InterfaceBackScene::MenuDescr::Set(CMatrix *pMtx, const char *pcActiveName,
 InterfaceBackScene::InterfaceBackScene()
     : m_pRS(nullptr), m_eiModel(0), m_eiLocators(0), m_nSelectMenuIndex(0), buffer{}, m_vFlarePos(), m_fFlareSize(0)
 {
+    texturePath_ = "MainMenu/";
+
     m_pModel = nullptr;
     m_pLocators = nullptr;
 
@@ -179,7 +181,11 @@ InterfaceBackScene::~InterfaceBackScene()
 
 bool InterfaceBackScene::Init()
 {
-    m_pRS = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    if (AttributesPointer->HasAttribute("texturePath") )
+    {
+        texturePath_ = to_string(AttributesPointer->GetAttribute("texturePath") );
+    }
+    m_pRS = core.GetServiceX<VDX9RENDER>();
     Assert(m_pRS);
     flyTex = m_pRS->TextureCreate("LocEfx\\firefly.tga");
     m_nFlareTexture = m_pRS->TextureCreate("ShipsFlares\\corona.tga");
@@ -380,21 +386,21 @@ uint64_t InterfaceBackScene::ProcessMessage(MESSAGE &message)
     case 8: // set light source
     {
         const std::string &param = message.String();
-        InitLight(AttributesPointer ? AttributesPointer->GetAttributeClass(param.c_str()) : nullptr);
+        InitLight(AttributesPointer ? AttributesPointer->GetAttributeClass(param) : nullptr);
     }
     break;
 
     case 9: // add animation model
     {
         const std::string &param = message.String();
-        InitAniModel(AttributesPointer ? AttributesPointer->GetAttributeClass(param.c_str()) : nullptr);
+        InitAniModel(AttributesPointer ? AttributesPointer->GetAttributeClass(param) : nullptr);
     }
     break;
 
     case 10: // add model
     {
         const std::string &param = message.String();
-        InitStaticModel(AttributesPointer ? AttributesPointer->GetAttributeClass(param.c_str()) : nullptr);
+        InitStaticModel(AttributesPointer ? AttributesPointer->GetAttributeClass(param) : nullptr);
     }
     break;
     }
@@ -414,10 +420,10 @@ void InterfaceBackScene::LoadModel(const char *pcModelName)
         core.EraseEntity(m_eiLocators);
         m_pLocators = nullptr;
     }
-    auto *pGeo = static_cast<VGEOMETRY *>(core.GetService("Geometry"));
+    auto *pGeo = core.GetServiceX<VGEOMETRY>();
     if (pGeo)
         pGeo->SetTexturePath(
-            (std::string("MainMenu\\") + XINTERFACE::pThis->StringService()->GetLanguage() + "\\").c_str());
+            (texturePath_ + XINTERFACE::pThis->StringService()->GetLanguage() + "\\").c_str());
     // create model
     m_eiModel = core.CreateEntity("MODELR");
     core.Send_Message(m_eiModel, "ls", MSG_MODEL_LOAD_GEO, pcModelName);
@@ -705,9 +711,9 @@ void InterfaceBackScene::InitLight(ATTRIBUTES *pAParam)
     const char *pcFonarModel = pAParam->GetAttribute("model");
     if (pcFonarModel)
     {
-        auto pGeo = static_cast<VGEOMETRY *>(core.GetService("Geometry"));
+        auto pGeo = core.GetServiceX<VGEOMETRY>();
         if (pGeo)
-            pGeo->SetTexturePath("MainMenu\\");
+            pGeo->SetTexturePath(texturePath_.c_str());
         // create model
         pLight->eiModel = core.CreateEntity("MODELR");
         core.Send_Message(pLight->eiModel, "ls", MSG_MODEL_LOAD_GEO, pcFonarModel);
@@ -907,10 +913,10 @@ void InterfaceBackScene::InitAniModel(ATTRIBUTES *pAParam)
     auto *pObj = new AniModelDescr;
     Assert(pObj);
 
-    auto *pAniService = static_cast<ANIMATION *>(core.GetService("AnimationServiceImp"));
-    auto *pGeo = static_cast<VGEOMETRY *>(core.GetService("Geometry"));
+    auto *pAniService = core.GetServiceX<AnimationService>();
+    auto *pGeo = core.GetServiceX<VGEOMETRY>();
     if (pGeo)
-        pGeo->SetTexturePath("MainMenu\\");
+        pGeo->SetTexturePath(texturePath_.c_str());
     // create model
     pObj->ei = core.CreateEntity("MODELR");
     core.Send_Message(pObj->ei, "ls", MSG_MODEL_LOAD_GEO, pcMdlName);
@@ -958,9 +964,9 @@ void InterfaceBackScene::InitStaticModel(ATTRIBUTES *pAParam)
     auto *pObj = new AniModelDescr;
     Assert(pObj);
 
-    auto *pGeo = static_cast<VGEOMETRY *>(core.GetService("Geometry"));
+    auto *pGeo = core.GetServiceX<VGEOMETRY>();
     if (pGeo)
-        pGeo->SetTexturePath("MainMenu\\");
+        pGeo->SetTexturePath(texturePath_.c_str());
     // create model
     pObj->ei = core.CreateEntity("MODELR");
     core.Send_Message(pObj->ei, "ls", MSG_MODEL_LOAD_GEO, pcMdlName);

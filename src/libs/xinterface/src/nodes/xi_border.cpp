@@ -2,7 +2,7 @@
 
 #include "core.h"
 
-#include "v_file_service.h"
+#include "file_service.h"
 #include "xi_image.h"
 
 CXI_BORDER::CXI_BORDER()

@@ -98,6 +98,17 @@ void SDLWindow::SetGamma(const uint16_t (&red)[256], const uint16_t (&green)[256
     SDL_SetWindowGammaRamp(window_.get(), red, green, blue);
 }
 
+void SDLWindow::ShowCursor(bool show_cursor)
+{
+    if (show_cursor != isCursorShown_)
+    {
+        isCursorShown_ = show_cursor;
+#ifdef _WIN32 // FIX_LINUX Cursor
+        ::ShowCursor(show_cursor);
+#endif
+    }
+}
+
 int SDLWindow::Subscribe(const EventHandler &handler)
 {
     int id = 1;

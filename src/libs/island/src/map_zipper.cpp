@@ -1,6 +1,6 @@
+#include "debug-trap.h"
 #include "island.h"
 #include "math_inlines.h"
-#include "debug-trap.h"
 
 namespace
 {
@@ -8,35 +8,25 @@ namespace
 uint32_t Number2Shift(uint32_t dwNumber)
 {
     for (uint32_t i = 0; i < 31; i++)
+    {
         if (static_cast<uint32_t>(1 << i) == dwNumber)
+        {
             return i;
+        }
+    }
     return 0;
 }
 
-}
+} // namespace
 
-MapZipper::MapZipper()
+uint32_t MapZipper::GetSizeX() const
 {
-    pWordTable = nullptr;
-    pRealData = nullptr;
+    return dwSizeX;
 }
 
-MapZipper::~MapZipper()
-{
-    UnInit();
-}
-
-void MapZipper::UnInit()
-{
-    STORM_DELETE(pWordTable);
-    free(pRealData);
-}
-
-void MapZipper::DoZip(uint8_t *pSrc, uint32_t _dwSizeX)
+void MapZipper::DoZip(const std::span<uint8_t> &pSrc, uint32_t _dwSizeX)
 {
     uint32_t i, j, k, x, y, xx, yy;
-
-    UnInit();
 
     uint32_t dwRealIndex = 0;
 
@@ -49,8 +39,8 @@ void MapZipper::DoZip(uint8_t *pSrc, uint32_t _dwSizeX)
 
     dwShiftNumBlocksX = Number2Shift(dwDX);
 
-    pWordTable = new uint16_t[dwDX * dwDX];
-    pRealData = static_cast<uint8_t *>(malloc(dwSizeX * dwSizeX));
+    wordTable_.resize(dwDX * dwDX);
+    realData_.resize(dwSizeX * dwSizeX);
     for (i = 0; i < dwDX * dwDX; i++)
     {
         y = i / dwDX;
@@ -65,55 +55,65 @@ void MapZipper::DoZip(uint8_t *pSrc, uint32_t _dwSizeX)
             xx = j - (yy << dwBlockShift);
             const auto byRes = pSrc[dwStart + yy * dwSizeX + xx];
             if (j == 0)
+            {
                 byTest = byRes;
+            }
             if (byTest != byRes)
             {
                 bTest = false;
-                pWordTable[i] = static_cast<uint16_t>(dwRealIndex);
+                wordTable_[i] = static_cast<uint16_t>(dwRealIndex);
                 for (k = 0; k < dwBlockSize * dwBlockSize; k++)
                 {
                     yy = k >> dwBlockShift;
                     xx = k - (yy << dwBlockShift);
-                    pRealData[dwRealIndex * dwBlockSize * dwBlockSize + k] = pSrc[dwStart + yy * dwSizeX + xx];
+                    realData_[dwRealIndex * dwBlockSize * dwBlockSize + k] = pSrc[dwStart + yy * dwSizeX + xx];
                 }
                 dwRealIndex++;
                 break;
             }
         }
         if (bTest)
-            pWordTable[i] = static_cast<uint16_t>(0x8000) | static_cast<uint16_t>(byTest);
+        {
+            wordTable_[i] = static_cast<uint16_t>(0x8000) | static_cast<uint16_t>(byTest);
+        }
     }
     dwNumRealBlocks = dwRealIndex;
-    pRealData = static_cast<uint8_t *>(realloc(pRealData, dwRealIndex * dwBlockSize * dwBlockSize));
+    realData_.resize(dwRealIndex * dwBlockSize * dwBlockSize);
 
     for (y = 0; y < _dwSizeX; y++)
+    {
         for (x = 0; x < _dwSizeX; x++)
         {
             if (Get(x, y) != pSrc[x + y * _dwSizeX])
+            {
                 psnip_trap();
+            }
         }
+    }
 }
 
-uint8_t MapZipper::Get(uint32_t dwX, uint32_t dwY)
+uint8_t MapZipper::Get(uint32_t dwX, uint32_t dwY) const
 {
-    if (!pWordTable)
+    if (wordTable_.empty())
+    {
         return 255;
-    const auto wRes = pWordTable[((dwY >> dwBlockShift) << dwShiftNumBlocksX) + (dwX >> dwBlockShift)];
+    }
+    const auto wRes = wordTable_[((dwY >> dwBlockShift) << dwShiftNumBlocksX) + (dwX >> dwBlockShift)];
     if (wRes & 0x8000)
+    {
         return static_cast<uint8_t>(wRes & 0xFF);
+    }
     const auto x = dwX - ((dwX >> dwBlockShift) << dwBlockShift);
     const auto y = dwY - ((dwY >> dwBlockShift) << dwBlockShift);
 
     const auto byRes =
-        pRealData[((static_cast<uint32_t>(wRes) << dwBlockShift) << dwBlockShift) + (y << dwBlockShift) + x];
+        realData_[((static_cast<uint32_t>(wRes) << dwBlockShift) << dwBlockShift) + (y << dwBlockShift) + x];
 
     return byRes;
 }
 
 bool MapZipper::Load(std::string sFileName)
 {
-    UnInit();
-
     auto fileS = fio->_CreateFile(sFileName.c_str(), std::ios::binary | std::ios::in);
     if (!fileS.is_open())
     {
@@ -125,15 +125,15 @@ bool MapZipper::Load(std::string sFileName)
     fio->_ReadFile(fileS, &dwBlockShift, sizeof(dwBlockShift));
     fio->_ReadFile(fileS, &dwShiftNumBlocksX, sizeof(dwShiftNumBlocksX));
     fio->_ReadFile(fileS, &dwNumRealBlocks, sizeof(dwNumRealBlocks));
-    pWordTable = new uint16_t[dwDX * dwDX];
-    fio->_ReadFile(fileS, pWordTable, sizeof(uint16_t) * dwDX * dwDX);
-    pRealData = static_cast<uint8_t *>(malloc(dwNumRealBlocks * dwBlockSize * dwBlockSize));
-    fio->_ReadFile(fileS, pRealData, sizeof(uint8_t) * dwNumRealBlocks * dwBlockSize * dwBlockSize);
+    wordTable_.resize(dwDX * dwDX);
+    fio->_ReadFile(fileS, wordTable_.data(), sizeof(uint16_t) * wordTable_.size());
+    realData_.resize(dwNumRealBlocks * dwBlockSize * dwBlockSize);
+    fio->_ReadFile(fileS, realData_.data(), sizeof(uint8_t) * realData_.size());
     fio->_CloseFile(fileS);
     return true;
 }
 
-bool MapZipper::Save(std::string sFileName)
+bool MapZipper::Save(std::string sFileName) const
 {
     auto fileS = fio->_CreateFile(sFileName.c_str(), std::ios::binary | std::ios::out);
     if (!fileS.is_open())
@@ -146,8 +146,8 @@ bool MapZipper::Save(std::string sFileName)
     fio->_WriteFile(fileS, &dwBlockShift, sizeof(dwBlockShift));
     fio->_WriteFile(fileS, &dwShiftNumBlocksX, sizeof(dwShiftNumBlocksX));
     fio->_WriteFile(fileS, &dwNumRealBlocks, sizeof(dwNumRealBlocks));
-    fio->_WriteFile(fileS, pWordTable, sizeof(uint16_t) * dwDX * dwDX);
-    fio->_WriteFile(fileS, pRealData, sizeof(uint8_t) * dwNumRealBlocks * dwBlockSize * dwBlockSize);
+    fio->_WriteFile(fileS, wordTable_.data(), sizeof(uint16_t) * wordTable_.size());
+    fio->_WriteFile(fileS, realData_.data(), sizeof(uint8_t) * realData_.size());
     fio->_CloseFile(fileS);
     return true;
 }

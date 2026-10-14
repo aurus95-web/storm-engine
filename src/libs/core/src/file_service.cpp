@@ -12,7 +12,6 @@
 #define SECTION_B ']'
 #define INI_EQUAL '='
 #define VOIDSYMS_NUM 2
-#define INI_SIGNATURE ";[SE2IF]"
 const char INI_LINEFEED[3] = {0xd, 0xa, 0};
 const char INI_VOIDSYMS[VOIDSYMS_NUM] = {0x20, 0x9};
 
@@ -21,7 +20,7 @@ namespace
 FILE_SERVICE file_service;
 }
 
-extern VFILE_SERVICE *fio = &file_service;
+extern FILE_SERVICE *fio = &file_service;
 
 void FILE_SERVICE::FlushIniFiles()
 {
@@ -132,16 +131,10 @@ std::vector<std::string> FILE_SERVICE::_GetPathsOrFilenamesByMask(const char *so
 }
 
 template <typename DirIterator>
-std::vector<std::filesystem::path> iter_directory(DirIterator &it, std::error_code &ec, const char *mask,
+std::vector<std::filesystem::path> iter_directory(DirIterator &it, const char *mask,
                                                   bool getPaths, bool onlyDirs, bool onlyFiles)
 {
     std::vector<std::filesystem::path> result;
-
-    if (ec)
-    {
-        spdlog::warn("Failed to open save folder: {}", ec.message());
-        return result;
-    }
 
     std::filesystem::path curPath;
     for (auto &dirEntry : it)
@@ -186,21 +179,23 @@ std::vector<std::filesystem::path> FILE_SERVICE::_GetFsPathsByMask(const char *s
     if (recursive)
     {
         auto it = std::filesystem::recursive_directory_iterator(srcPath, ec);
-        return iter_directory(it, ec, mask, getPaths, onlyDirs, onlyFiles);
+        if (ec)
+        {
+            spdlog::warn("Failed to create recursive directory iterator for '{}': {}", srcPath.string(), ec.message());
+            return {};
+        }
+        return iter_directory(it, mask, getPaths, onlyDirs, onlyFiles);
     }
     else
     {
         auto it = std::filesystem::directory_iterator(srcPath, ec);
-        return iter_directory(it, ec, mask, getPaths, onlyDirs, onlyFiles);
+        if (ec)
+        {
+            spdlog::warn("Failed to create directory iterator for '{}': {}", srcPath.string(), ec.message());
+            return {};
+        }
+        return iter_directory(it, mask, getPaths, onlyDirs, onlyFiles);
     }
-}
-
-std::time_t FILE_SERVICE::_ToTimeT(std::filesystem::file_time_type tp)
-{
-    using namespace std::chrono;
-    auto sctp = time_point_cast<system_clock::duration>(tp - std::filesystem::file_time_type::clock::now() +
-                                                        system_clock::now());
-    return system_clock::to_time_t(sctp);
 }
 
 std::filesystem::file_time_type FILE_SERVICE::_GetLastWriteTime(const char *filename)
@@ -695,3 +690,8 @@ bool INIFILE_T::TestSection(const char *section_name)
 {
     return ifs_PTR->TestSection(section_name);
 };
+
+storm::Data INIFILE_T::ToData()
+{
+    return ifs_PTR->ToData();
+}

@@ -1,18 +1,18 @@
 #pragma once
-#include <vector>
+
+#include <algorithm>
 #include <cstdint>
+#include <string_view>
+#include <vector>
 
 /* TODO: REMOVE THIS.... */
-constexpr uint32_t MakeHashValue(const char *string)
+constexpr uint32_t MakeHashValue(const std::string_view &string)
 {
     uint32_t hval = 0;
 
-    while (*string != 0)
-    {
-        auto v = *string++;
+    std::for_each(std::begin(string), std::end(string), [&hval](char v) {
         if ('A' <= v && v <= 'Z')
             v += 'a' - 'A';
-
         hval = (hval << 4) + static_cast<uint32_t>(v);
         const uint32_t g = hval & (static_cast<uint32_t>(0xf) << (32 - 4));
         if (g != 0)
@@ -20,8 +20,14 @@ constexpr uint32_t MakeHashValue(const char *string)
             hval ^= g >> (32 - 8);
             hval ^= g;
         }
-    }
+    });
+
     return hval;
+}
+
+constexpr uint32_t MakeHashValue(const char *string)
+{
+    return MakeHashValue(std::string_view(string));
 }
 
 class VMA;

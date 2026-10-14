@@ -1,5 +1,8 @@
 BasedOnStyle: Microsoft
 
+PackConstructorInitializers: "Never"
+BreakConstructorInitializers: "BeforeComma"
+
 # To apply code style please run:
 # find ./src -iname *.h -o -iname *.cpp | xargs clang-format -i
 

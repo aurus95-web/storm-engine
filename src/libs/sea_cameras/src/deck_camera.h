@@ -40,7 +40,6 @@ class DECK_CAMERA : public COMMON_CAMERA
     CVECTOR g_gv0, g_gv1, g_gv2;
 
     MODEL *pModel;
-    VDX9RENDER *RenderService;
     CVECTOR camera_pos, camera_ang;
     float h_eye;
     RECT Screen_Rect;
@@ -61,32 +60,14 @@ class DECK_CAMERA : public COMMON_CAMERA
 
     void SetCharacter(ATTRIBUTES *_pACharacter) override;
 
-    void SetDevice();
     bool Init() override;
     void Move(uint32_t DeltaTime);
-    void Realize(uint32_t Delta_Time);
-    void Execute(uint32_t Delta_Time);
+    // void Realize(uint32_t Delta_Time);
+    void Execute(uint32_t real_delta) override;
     bool CreateState(ENTITY_STATE_GEN *state_gen);
     bool LoadState(ENTITY_STATE *state);
     uint32_t AttributeChanged(ATTRIBUTES *pAttr) override;
     uint64_t ProcessMessage(MESSAGE &message) override;
-
-    void ProcessStage(Stage stage, uint32_t delta) override
-    {
-        switch (stage)
-        {
-        case Stage::execute:
-            Execute(delta);
-            break;
-        case Stage::realize:
-            Realize(delta);
-            break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
-        }
-    }
 
     void Save(CSaveLoad *pSL) override;
     void Load(CSaveLoad *pSL) override;

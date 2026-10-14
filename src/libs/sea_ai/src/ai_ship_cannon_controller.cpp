@@ -555,11 +555,8 @@ void AIShipCannonController::Realize(float fDeltaTime)
 {
     using namespace std::chrono_literals;
 
-    if (core.Controls->GetDebugAsyncKeyState('H') < 0)
-    {
-        debugDrawToggle = !debugDrawToggle;
-        std::this_thread::sleep_for(100ms);
-    }
+    const auto *editor = core.GetEditor();
+    debugDrawToggle = editor != nullptr && editor->IsDebugFlagEnabled(storm::editor::DebugFlag::CannonDebug);
 
     if (!debugDrawToggle)
     {

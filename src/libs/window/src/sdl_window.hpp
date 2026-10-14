@@ -27,21 +27,23 @@ class SDLWindow : public OSWindow
     void WarpMouseInWindow(int x, int y) override;
     void SetTitle(const std::string &title) override;
     void SetGamma(const uint16_t (&red)[256], const uint16_t (&green)[256], const uint16_t (&blue)[256]) override;
+    void ShowCursor(bool show_cursor) override;
 
     int Subscribe(const EventHandler &handler) override;
     void Unsubscribe(int id) override;
 
     void *OSHandle() override;
+    SDL_Window *SDLHandle() const override;
 
-    SDL_Window *SDLHandle() const;
     void ProcessEvent(const SDL_WindowEvent &evt) const;
 
   private:
     static int SDLCALL SDLEventHandler(void *userdata, SDL_Event *evt);
 
+    std::map<int, EventHandler> handlers_;
     std::unique_ptr<SDL_Window, std::function<void(SDL_Window *)>> window_ = nullptr;
     uint32_t sdlID_;
     bool fullscreen_ = false;
-    std::map<int, EventHandler> handlers_;
+    bool isCursorShown_ = true;
 };
 } // namespace storm

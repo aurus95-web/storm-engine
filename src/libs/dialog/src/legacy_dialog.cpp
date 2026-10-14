@@ -1,6 +1,7 @@
 #include "legacy_dialog.hpp"
 
 #include "dialog.hpp"
+#include "storm/config/config.hpp"
 #include <dialog/dialog_utils.hpp>
 
 #include <animation.h>
@@ -19,20 +20,14 @@ CREATE_CLASS(LegacyDialog)
 namespace
 {
 
-constexpr std::string_view DIALOG_INI_FILE_PATH = "Resource/Ini/dialog.ini";
+constexpr std::string_view DIALOG_INI_FILE_PATH = "Resource/Ini/dialog";
+constexpr std::string_view DEFAULT_FONT = "DIALOG0";
 const char *DEFAULT_INTERFACE_TEXTURE = "dialog/dialog.tga";
 
 constexpr const uint32_t COLOR_NORMAL = 0xFFFFFFFF;
 constexpr const uint32_t COLOR_LINK_UNSELECTED = ARGB(255, 127, 127, 127);
 
 constexpr const uint32_t UNFADE_TIME = 1000;
-
-int32_t LoadFont(const std::string_view &fontName, INIFILE &ini, VDX9RENDER &renderService)
-{
-    std::array<char, MAX_PATH> string_buffer{};
-    ini.ReadString("DIALOG", fontName.data(), string_buffer.data(), string_buffer.size(), "DIALOG0");
-    return renderService.LoadFont(string_buffer.data());
-}
 
 void FillIndexBuffer(VDX9RENDER &renderService, int32_t indexBuffer, size_t spriteCount)
 {
@@ -129,6 +124,10 @@ constexpr auto SPRITE_COUNT = SPRITE_DATA.size() + (DIALOG_MAX_LINES - 1);
 
 VDX9RENDER *LegacyDialog::RenderService = nullptr;
 
+LegacyDialog::LegacyDialog() : tickSound_(DEFAULT_TICK_SOUND), nameColor_(static_cast<int32_t>(COLOR_NORMAL))
+{
+}
+
 LegacyDialog::~LegacyDialog() noexcept
 {
     core.SetTimeScale(1.f);
@@ -137,14 +136,20 @@ LegacyDialog::~LegacyDialog() noexcept
     {
         RenderService->TextureRelease(interfaceTexture_);
     }
+
+    if (headModel_ != invalid_entity)
+    {
+        core.EraseEntity(headModel_);
+        headModel_ = invalid_entity;
+    }
 }
 
 bool LegacyDialog::Init()
 {
-    RenderService = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    RenderService = core.GetServiceX<VDX9RENDER>();
     Assert(RenderService != nullptr);
 
-    soundService_ = static_cast<VSoundService *>(core.GetService("SoundService"));
+    soundService_ = core.GetServiceX<VSoundService>();
 
     core.SetTimeScale(0.f);
 
@@ -169,6 +174,8 @@ bool LegacyDialog::Init()
     linkDescribe_.SetMaxLinesPerPage(5);
     linkDescribe_.SetColor(COLOR_LINK_UNSELECTED);
     linkDescribe_.SetSelectedColor(COLOR_NORMAL);
+
+    SetTickSound();
 
     return true;
 }
@@ -220,7 +227,7 @@ void LegacyDialog::Realize(uint32_t deltaTime)
 
     if (!characterName_.empty())
     {
-        RenderService->ExtPrint(nameFont_, COLOR_NORMAL, 0, PR_ALIGN_LEFT, true, fontScale_, 0, 0,
+        RenderService->ExtPrint(nameFont_, nameColor_, 0, PR_ALIGN_LEFT, true, fontScale_, 0, 0,
                                 static_cast<int32_t>(screenScale_.x * 168), static_cast<int32_t>(screenScale_.y * 28),
                                 characterName_.c_str());
     }
@@ -262,6 +269,10 @@ uint32_t LegacyDialog::AttributeChanged(ATTRIBUTES *attributes)
         soundName_ = soundName;
         soundState_ = SOUND_STARTING;
     }
+    else if (storm::iEquals(attributeName, "tickSound"))
+    {
+        SetTickSound();
+    }
     else
     {
         dialogNeedsUpdate_ = true;
@@ -298,13 +309,26 @@ uint64_t LegacyDialog::ProcessMessage(MESSAGE &msg)
 
 void LegacyDialog::LoadIni()
 {
-    auto ini = fio->OpenIniFile(DIALOG_INI_FILE_PATH.data());
+    const auto opt_config = storm::LoadConfig(DIALOG_INI_FILE_PATH);
 
-    mainFont_ = LoadFont("mainfont", *ini, *RenderService);
-    nameFont_ = LoadFont("namefont", *ini, *RenderService);
-    subFont_ = LoadFont("subfont", *ini, *RenderService);
+    if (opt_config) {
+        const auto &config = *opt_config;
 
-    ini.reset();
+        const auto &dialog = config["dialog"];
+        if (dialog.is_object()) {
+            mainFont_ = RenderService->LoadFont(dialog.value<std::string>("mainfont", std::string(DEFAULT_FONT)));
+            nameFont_ = RenderService->LoadFont(dialog.value<std::string>("namefont", std::string(DEFAULT_FONT)));
+            if (dialog.contains("name")) {
+                nameColor_ = storm::config::GetColor(dialog["name"]["color"]).value_or(COLOR_NORMAL);
+            }
+            subFont_ = RenderService->LoadFont(dialog.value<std::string>("subfont", std::string(DEFAULT_FONT)));
+        }
+    }
+    else {
+        mainFont_ = RenderService->LoadFont(DEFAULT_FONT);
+        nameFont_ = mainFont_;
+        subFont_ = mainFont_;
+    }
 }
 
 void LegacyDialog::UpdateScreenSize()
@@ -465,17 +489,19 @@ void LegacyDialog::SetAction(std::string action)
         preparedAction += "_" + mood_;
     };
 
-    model->GetAnimation()->CopyPlayerState(0, 1);
+    if (auto *animation = model->GetAnimation(); animation != nullptr) {
+        animation->CopyPlayerState(0, 1);
 
-    model->GetAnimation()->Player(0).SetAction(preparedAction.c_str());
-    model->GetAnimation()->Player(0).Play();
+        animation->Player(0).SetAction(preparedAction.c_str());
+        animation->Player(0).Play();
 
-    model->GetAnimation()->Timer(0).ResetTimer();
-    model->GetAnimation()->Timer(0).Start(0.2f);
-    model->GetAnimation()->Player(0).SetAutoStop(false);
-    model->GetAnimation()->Player(1).SetAutoStop(true);
-    model->GetAnimation()->Timer(0).SetPlayer(0, false);
-    model->GetAnimation()->Timer(0).SetPlayer(1, true);
+        animation->Timer(0).ResetTimer();
+        animation->Timer(0).Start(0.2f);
+        animation->Player(0).SetAutoStop(false);
+        animation->Player(1).SetAutoStop(true);
+        animation->Timer(0).SetPlayer(0, false);
+        animation->Timer(0).SetPlayer(1, true);
+    }
 }
 
 void LegacyDialog::UpdateHeadModel(const std::string &headModelPath)
@@ -493,7 +519,7 @@ void LegacyDialog::UpdateHeadModel(const std::string &headModelPath)
         }
 
         headModel_ = core.CreateEntity("MODELR");
-        auto gs = static_cast<VGEOMETRY *>(core.GetService("geometry"));
+        auto gs = core.GetServiceX<VGEOMETRY>();
         gs->SetTexturePath("characters\\");
 
         core.Send_Message(headModel_, "ls", MSG_MODEL_LOAD_GEO, headModelPath_.c_str());
@@ -577,7 +603,9 @@ void LegacyDialog::DrawHeadModel(uint32_t deltaTime)
         RenderService->SetLight(0, &headLight);
         RenderService->LightEnable(0, TRUE);
         const auto model = dynamic_cast<MODEL *>(core.GetEntityPointer(headModel_));
-        model->ProcessStage(Entity::Stage::realize, deltaTime);
+        if (model != nullptr) {
+            model->ProcessStage(Entity::Stage::realize, deltaTime);
+        }
 
         RenderService->SetLight(0, &oldLight);
         RenderService->LightEnable(0, oldLightEnabled);
@@ -756,9 +784,24 @@ void LegacyDialog::ProcessControls()
             if (selected_attr)
             {
                 const char *go = selected_attr->GetAttribute("go");
+                if (go == nullptr) {
+                    core.Trace("LegacyDialog: Invalid 'go' attribute, emergency exit!");
+                    EmergencyExit();
+                    return;
+                }
                 AttributesPointer->SetAttribute("CurrentNode", go);
                 core.Event("DialogEvent");
             }
+            else {
+                core.Trace("LegacyDialog: Invalid selected link, emergency exit!");
+                EmergencyExit();
+                return;
+            }
+        }
+        else {
+            core.Trace("LegacyDialog: Invalid links, emergency exit!");
+            EmergencyExit();
+            return;
         }
     }
 }
@@ -767,7 +810,7 @@ void LegacyDialog::PlayTick()
 {
     if (soundService_)
     {
-        soundService_->SoundPlay(TICK_SOUND, PCM_STEREO, VOLUME_FX);
+        soundService_->SoundPlay(tickSound_, PCM_STEREO, VOLUME_FX);
     }
 }
 
@@ -782,4 +825,25 @@ void LegacyDialog::Unfade()
             timeK = 1.f;
         core.SetTimeScale(timeK);
     }
+}
+
+void LegacyDialog::SetTickSound()
+{
+    const char *tick_sound_ptr = AttributesPointer->GetAttribute("tickSound");
+    if (tick_sound_ptr != nullptr) {
+        tickSound_ = tick_sound_ptr;
+    }
+    else {
+        tickSound_ = DEFAULT_TICK_SOUND;
+    }
+}
+
+void LegacyDialog::EmergencyExit()
+{
+    if (forceEmergencyClose_)
+    {
+        return;
+    }
+    forceEmergencyClose_ = true;
+    core.Event("EmergencyDialogExit");
 }

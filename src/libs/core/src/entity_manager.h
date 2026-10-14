@@ -34,6 +34,8 @@ class EntityManager final
     void NewLifecycle();
     void ForEachEntity(const std::function<void(entptr_t)> &f);
 
+    void ShowEditor(bool &active);
+
   private:
     constexpr static size_t kMaxLayerNum = sizeof(uint32_t) * 8;
 

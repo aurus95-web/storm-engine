@@ -2,7 +2,7 @@
 
 #include "dx9render.h"
 #include "string_compare.hpp"
-#include "v_file_service.h"
+#include "file_service.h"
 #include "platform/platform.hpp"
 
 #define ERROR_MUL 1.0f

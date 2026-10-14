@@ -4,7 +4,7 @@
 
 #include "core.h"
 
-#include "v_file_service.h"
+#include "file_service.h"
 
 CREATE_CLASS(BALLSPLASH)
 
@@ -28,7 +28,7 @@ bool BALLSPLASH::Init()
 
     sea = static_cast<SEA_BASE *>(core.GetEntityPointer(core.GetEntityId("sea")));
 
-    renderer = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    renderer = core.GetServiceX<VDX9RENDER>();
 
     // core.CreateEntity(&arrowModel,"MODELR");
     // core.Send_Message(arrowModel,"ls",MSG_MODEL_LOAD_GEO, "fish01");

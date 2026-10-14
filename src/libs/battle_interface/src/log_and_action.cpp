@@ -41,7 +41,7 @@ ILogAndActions::~ILogAndActions()
 
 bool ILogAndActions::Init()
 {
-    if ((rs = static_cast<VDX9RENDER *>(core.GetService("dx9render"))) == nullptr)
+    if ((rs = core.GetServiceX<VDX9RENDER>()) == nullptr)
     {
         throw std::runtime_error("Can`t create render service");
     }
@@ -168,7 +168,7 @@ uint64_t ILogAndActions::ProcessMessage(MESSAGE &message)
     break;
     case LI_SET_VISIBLE:
         m_bDontShowAll = (message.Long() == 0);
-        break;
+    break;
     case LI_CLEAR_STRINGS:
         while (m_sRoot != nullptr)
         {
@@ -177,7 +177,7 @@ uint64_t ILogAndActions::ProcessMessage(MESSAGE &message)
             STORM_DELETE(p->str);
             delete p;
         }
-        break;
+    break;
     case LI_OTHER_MSG: {
         const std::string &param = message.String();
         if (storm::iEquals(param, "SetTimeScale"))
@@ -185,6 +185,8 @@ uint64_t ILogAndActions::ProcessMessage(MESSAGE &message)
             core.SetTimeScale(message.Float());
         }
     }
+    case LOG_TRACE_SCRIPT_STACK:
+        core.collectCallStack();
     break;
     }
     return 0;
@@ -326,7 +328,7 @@ void ILogAndActions::Create(bool bFastComShow, bool bLogStringShow)
         m_nWindowLeft = pA->GetAttributeAsDword("left", -1);
         m_nWindowRight = pA->GetAttributeAsDword("right", -1);
         m_nWindowUp = pA->GetAttributeAsDword("up", 0);
-        m_fontID = rs->LoadFont(pA->GetAttribute("font"));
+        m_fontID = rs->LoadFont(to_string(pA->GetAttribute("font")));
         m_fFontScale = pA->GetAttributeAsFloat("fontscale", 1.f);
         m_dwColor = pA->GetAttributeAsDword("color", 0x00FFFFFF);
         m_nStringOffset = pA->GetAttributeAsDword("offsetString", 24);

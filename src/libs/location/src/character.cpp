@@ -8,9 +8,12 @@
 //
 //============================================================================================
 
+#include <shared/events.h>
+
 #include "character.h"
 #include "characters_groups.h"
 #include "lights.h"
+#include "storm\blade\blade.hpp"
 
 #include "debug-trap.h"
 #include "geometry.h"
@@ -668,7 +671,7 @@ bool Character::Init()
     if (!location)
         return false;
     effects = core.GetEntityId("LocationEffects");
-    soundService = static_cast<VSoundService *>(core.GetService("SoundService"));
+    soundService = core.GetServiceX<VSoundService>();
     // register our appearance in the location
     location->supervisor.AddCharacter(this);
     // The sea
@@ -995,6 +998,32 @@ uint32_t Character::AttributeChanged(ATTRIBUTES *apnt)
         // Updating the animation being played
         UpdateAnimation();
     }
+    // Engine crashes because attribute has no parent (orphaned)
+    // Disabled this code until we figure out how this can happen
+    else if (false && MatchAttributePath("equipment.*.locator", *apnt) )
+    {
+        if (isBladeSet)
+        {
+            const std::string equipment_id = apnt->GetParent()->GetThisName();
+            auto *blade_ptr = static_cast<BLADE *>(core.GetEntityPointer(blade));
+            if (blade_ptr)
+            {
+                blade_ptr->SetEquipmentLocator(equipment_id, apnt->GetValue() );
+            }
+        }
+    }
+    else if (MatchAttributePath("equipment.*.activeLocator", *apnt) )
+    {
+        if (isBladeSet)
+        {
+            const std::string equipment_id = apnt->GetParent()->GetThisName();
+            auto *blade_ptr = static_cast<BLADE *>(core.GetEntityPointer(blade));
+            if (blade_ptr)
+            {
+                blade_ptr->SetEquipmentActiveLocator(equipment_id, apnt->GetValue() );
+            }
+        }
+    }
     return 0;
 }
 
@@ -1019,7 +1048,7 @@ void Character::SetSignModel()
         return;
     }
     // Path to textures
-    VGEOMETRY *gs = static_cast<VGEOMETRY *>(core.GetService("geometry"));
+    VGEOMETRY *gs = core.GetServiceX<VGEOMETRY>();
     if (gs)
         gs->SetTexturePath("quest_signs\\");
     // Path to the model
@@ -3142,7 +3171,7 @@ bool Character::zLoadModel(MESSAGE &message)
     const std::string &name = message.String();
     const std::string &ani = message.String();
     // Path to textures
-    auto *gs = static_cast<VGEOMETRY *>(core.GetService("geometry"));
+    auto *gs = core.GetServiceX<VGEOMETRY>();
     if (gs)
         gs->SetTexturePath("characters\\");
     // Path to the model
@@ -3315,6 +3344,30 @@ bool Character::zSetBlade(MESSAGE &message)
             return false;
     }
     core.Send_Message(blade, "llisfll", MSG_BLADE_SET, nBladeIdx, mdl, name.c_str(), t, s, e);
+
+    ATTRIBUTES *equipment_attr = AttributesPointer->GetAttributeClass("equipment");
+    if (equipment_attr != nullptr)
+    {
+        auto *blade_ptr = static_cast<BLADE *>(core.GetEntityPointerSafe(blade));
+        Assert(blade_ptr);
+
+        for (size_t i = 0; i < equipment_attr->GetAttributesNum(); ++i)
+        {
+            ATTRIBUTES *equipment_entry = equipment_attr->GetAttributeClass(i);
+            Assert(equipment_entry != nullptr);
+            if (equipment_entry->HasAttribute("locator"))
+            {
+                blade_ptr->SetEquipmentLocator(equipment_entry->GetThisName(),
+                                               to_string(equipment_entry->GetAttribute("locator")));
+            }
+            if (equipment_entry->HasAttribute("activeLocator"))
+            {
+                blade_ptr->SetEquipmentActiveLocator(equipment_entry->GetThisName(),
+                                                     to_string(equipment_entry->GetAttribute("active_locator")));
+            }
+        }
+    }
+
     UpdateWeapons();
     return true;
 }
@@ -4305,11 +4358,11 @@ void Character::UpdateAnimation()
                           }
                         }
                  */
-                const char *pWeaponID;
+                std::string weapon_id = "blade";
                 VDATA *pdat = core.Event("eGetWeaponID", "s", characterID);
                 if (pdat)
                 {
-                    pWeaponID = pdat->GetString();
+                    weapon_id = pdat->GetString();
                 }
                 VDATA *vd = nullptr;
                 float recoilDist;
@@ -4333,7 +4386,7 @@ void Character::UpdateAnimation()
                     }
                     break;
                 case fgt_attack_force: // Slash and lunge with a slashing blow
-                    if (storm::iEquals(pWeaponID, "topor") && fgtSetIndex == 3)
+                    if (storm::iEquals(weapon_id, "topor") && fgtSetIndex == 3)
                     {
                         // if with an ax, then the lunge is changed to a chopping blow
                         fgtSetIndex = rand() % 2;
@@ -4508,7 +4561,7 @@ void Character::UpdateAnimation()
                 }
                 case fgt_block: // Saber protection
                     core.Send_Message(blade, "ll", MSG_BLADE_TRACE_OFF, 0);
-                    if (storm::iEquals(pWeaponID, "topor"))
+                    if (storm::iEquals(weapon_id, "topor"))
                     {
                         if (!(isSet = SetAction(blockaxe.name, blockaxe.tblend, 0.0f, 5.0f, true)))
                         {
@@ -4531,7 +4584,7 @@ void Character::UpdateAnimation()
                             break; // boal doesn't always break into animation
                     }
                     core.Send_Message(blade, "ll", MSG_BLADE_TRACE_OFF, 0);
-                    if (storm::iEquals(pWeaponID, "topor"))
+                    if (storm::iEquals(weapon_id, "topor"))
                     {
                         if (!(isSet = SetAction(blockaxehit.name, blockaxehit.tblend, 0.0f, 2.0f, true)))
                         {
@@ -5023,27 +5076,21 @@ inline void Character::CheckAttackHit(bool isGunBlade)
         return;
     // go through all the enemies
     bool isParry = false;
-    bool isDodge = false;
     bool isHrrrSound = true;
     bool isUseEnergy = true; // remove energy once boal
+    int hit_result = LAI_CHARACTER_HIT_HARD;
     for (size_t i = 0; i < fndCharacter.size(); i++)
     {
         // Character
         Supervisor::FindCharacter &fc = fndCharacter[i];
         if (fc.c->liveValue < 0 || fc.c->deadName || fc.d2 <= 0.0f)
-            continue;
-        if (fc.c->isRecoilState)
         {
-            int32_t resHit = 0;
-            VDATA *vd = core.Event("Check_ChrHitAttack", "iil", GetId(), fc.c->GetId(),
-                                   static_cast<int32_t>(fc.c->isRecoilState));
-            if (vd && vd->Get(resHit))
-            {
-                if (resHit == 0)
-                {
-                    isDodge = true;
-                }
-            }
+            continue;
+        }
+        VDATA *vd = core.Event("Check_ChrHitAttack", "iil", GetId(), fc.c->GetId(),
+                               static_cast<int32_t>(fc.c->isRecoilState));
+        if (vd) {
+            vd->Get(hit_result);
         }
         if (fc.c->fgtCurType == fgt_parry && fc.c->isParryState)
         {
@@ -5060,7 +5107,7 @@ inline void Character::CheckAttackHit(bool isGunBlade)
             fc.c->UpdateAnimation(); // boal
             // fc.c->PlaySound("fgt_feint");
         }
-        else if (!isDodge)
+        else if (hit_result != LAI_CHARACTER_HIT_DODGE)
         {
             bool isBlocked = (fc.c->fgtCurType == fgt_block || fc.c->fgtCurType == fgt_blockhit);
             if (isBlockBreak)
@@ -5086,7 +5133,11 @@ inline void Character::CheckAttackHit(bool isGunBlade)
                     core.Event("Event_ChrSnd_Hit", "i", fc.c->GetId());
                 }
             }
-            fc.c->Hit(hitReaction);
+
+            if (hit_result == LAI_CHARACTER_HIT_HARD) {
+                fc.c->Hit(hitReaction);
+            }
+
             int blockTime = -1;
             if (isBlocked)
             {

@@ -3,57 +3,58 @@ name: Prepare BETA release
 on:
   push:
     tags:
-      - "beta[0-9]+"
+      - "pa*"
 
 jobs:
   build-windows:
-    runs-on: windows-2019
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        configuration: [msvc-debug, msvc-release]
+        configuration: [debug, release]
         enable_steam: [false]
-        include:
-          - enable_steam: true
-            configuration: msvc-release
-    name: 'build-windows [${{ matrix.configuration }}, steam: ${{ matrix.enable_steam }}]'
+#        include:
+#          - enable_steam: true
+#            configuration: msvc-release
+    name: 'Windows [${{ matrix.configuration }}, steam: ${{ matrix.enable_steam }}]'
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         submodules: 'recursive'
     - uses: ilammy/msvc-dev-cmd@v1
     - name: Install Conan
-      run: pip install conan
-    - name: Configure with CMakeSettings.json and build
-      uses: lukka/run-cmake@v3
-      with:
-        cmakeListsOrSettingsJson: CMakeSettingsJson
-        cmakeSettingsJsonPath: '${{ github.workspace }}/CMakeSettings.json'
-        useVcpkgToolchainFile: false
-        buildDirectory: '${{ github.workspace }}/build'
-        configurationRegexFilter: '${{ matrix.configuration }}'
-        cmakeAppendedArgs: '-DSTORM_ENABLE_STEAM=${{ matrix.enable_steam }} -DSTORM_ENABLE_CRASH_REPORTS=ON'
+      run: pip install conan==2.12.2
+    - uses: lukka/get-cmake@latest
+    - name: Configure CMake w/ Conan
+      run: |
+        conan profile new default --detect
+        conan profile update conf.tools.system.package_manager:mode=install default
+        conan profile update conf.tools.system.package_manager:sudo=True default
+        cmake --preset=default
+    - name: Build
+      run: cmake --build --preset=${{ matrix.configuration }} -DSTORM_ENABLE_STEAM=${{ matrix.enable_steam }} -DSTORM_ENABLE_CRASH_REPORTS=ON
     - name: Upload artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: storm-engine.${{ matrix.configuration }}-steam-${{ matrix.enable_steam }}
-        path: build\${{ matrix.configuration }}\bin
+        path: build/default/${{ matrix.configuration }}
+        include-hidden-files: true
     - name: Archive release
       uses: papeloto/action-zip@v1
       with:
-        files: build\${{ matrix.configuration }}\bin
+        files: build/default/${{ matrix.configuration }}
         recursive: true
         dest: storm-engine.${{ matrix.configuration }}-steam-${{ matrix.enable_steam }}.zip
     - name: Publish release
       uses: softprops/action-gh-release@v1
       with:
-        draft: true
+        draft: contains(github.ref, 'beta')
         files: storm-engine.${{ matrix.configuration }}-steam-${{ matrix.enable_steam }}.zip
     - name: Setup Node.js
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v4
       with:
-        node-version: '12'
+        node-version: '20'
     - name: Upload debug symbols
       run: |
         npm install @sentry/cli
-        ./node_modules/.bin/sentry-cli --auth-token ${{ secrets.SENTRY_AUTH_TOKEN }} upload-dif -o storm-devs -p storm-engine -t pe -t pdb "build\${{ matrix.configuration }}\bin"
+        ./node_modules/.bin/sentry-cli --auth-token ${{ secrets.SENTRY_AUTH_TOKEN }} debug-files upload -o piratesahoy -p storm-engine -t pe -t pdb "build/default/${{ matrix.configuration }}"

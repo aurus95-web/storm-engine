@@ -3,7 +3,7 @@
 #include "matrix.h"
 #include "dx9render.h"
 #include "geometry.h"
-#include "v_file_service.h"
+#include "file_service.h"
 #include "vma.hpp"
 
 #define MAX_PS_TEXTURES 8

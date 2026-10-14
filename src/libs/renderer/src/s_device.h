@@ -19,7 +19,7 @@
 
 #define MAX_STEXTURES 10240
 #define MAX_BUFFERS 10240
-#define MAX_FONTS 256
+constexpr size_t MAX_FONTS = 256;
 
 struct D3DERRORS
 {
@@ -63,9 +63,9 @@ struct INDEX_BUFFER
 
 struct FONTEntity
 {
-    char *name;
+    std::string name;
     uint32_t hash;
-    FONT *font;
+    std::unique_ptr<storm::VFont> font;
     int32_t ref;
 };
 
@@ -170,7 +170,7 @@ class DX9RENDER : public VDX9RENDER
     int32_t StringWidth(const std::string_view &string, int32_t nFontNum = 0, float fScale = 1.f, int32_t scrWidth = 0) override;
     int32_t CharWidth(utf8::u8_char, int32_t nFontNum = 0, float fScale = 1.f, int32_t scrWidth = 0) override;
     int32_t CharHeight(int32_t fontID) override;
-    int32_t LoadFont(const char *fontName) override;   // returns the number \ font id, or -1 on error
+    int32_t LoadFont(const std::string_view &fontName) override;   // returns the number \ font id, or -1 on error
     bool UnloadFont(const char *fontName) override; // returns true if the font is still in use
     bool UnloadFont(int32_t fontID) override;          // returns true if the font is still in use
     bool IncRefCounter(int32_t fontID) override;       // increase reference counter if object is being copied
@@ -474,8 +474,7 @@ private:
 #endif
 
     char *fontIniFileName;
-    int32_t nFontQuantity;
-    FONTEntity FontList[MAX_FONTS]{};
+    std::vector<FONTEntity> FontList{};
     int32_t idFontCurrent;
 
     VideoTextureEntity *pVTL;
@@ -556,10 +555,10 @@ private:
     bool bPostProcessEnabled;
     bool bPostProcessError;
 
-    bool bSeaEffect;
-    float fSeaEffectSize;
-    float fSeaEffectSpeed;
-    uint32_t dwBackColor;
+    bool bSeaEffect = false;
+    float fSeaEffectSize = 0;
+    float fSeaEffectSpeed = 0;
+    uint32_t dwBackColor = 0;
 
     //-------- post process
 

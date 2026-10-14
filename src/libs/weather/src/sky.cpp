@@ -742,7 +742,11 @@ uint32_t SKY::GetPixelColor(IDirect3DTexture9 *pTex, float fu, float fv) const
 
     if (texdesc.Format != D3DFMT_A8R8G8B8)
     {
-        core.Trace("Sky: Failed to get pixel color for compressed texture");
+        // formats without alpha (R5G6B5 in Beyond New Horizons) are opaque, this is checked every frame
+        if (texdesc.Format != D3DFMT_R5G6B5 && texdesc.Format != D3DFMT_X8R8G8B8)
+        {
+            core.Trace("Sky: Failed to get pixel color for texture format %d", texdesc.Format);
+        }
         return dwCol;
     }
 

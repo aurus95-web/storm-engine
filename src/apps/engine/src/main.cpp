@@ -21,6 +21,7 @@
 #include "os_window.hpp"
 #include "steam_api.hpp"
 #include "storm/engine_settings.hpp"
+#include "string_compare.hpp"
 #include "v_sound_service.h"
 #include "watermark.hpp"
 
@@ -103,7 +104,8 @@ void SetupApplePlatform()
 #else
         const std::string moltenvk = std::string(base_path) + "libMoltenVK.dylib";
 #endif
-        SDL_SetHint(SDL_HINT_VULKAN_LIBRARY, moltenvk.c_str());
+        // read by SDL_Vulkan_LoadLibrary(nullptr), which DXVK calls
+        setenv("SDL_VULKAN_LIBRARY", moltenvk.c_str(), 0);
         SDL_free(base_path);
     }
 
@@ -114,6 +116,32 @@ void SetupApplePlatform()
         if (chdir(documents.c_str()) != 0)
         {
             SDL_Log("Unable to switch to the Documents folder");
+        }
+
+        // engine resources (techniques, shaders) are shipped in the app bundle, but resources are
+        // looked up in the working directory next to the game data, so they are synchronized there
+        if (char *bundle_path = SDL_GetBasePath())
+        {
+            // the game folder is usually named RESOURCE, reuse it whatever the case is
+            std::filesystem::path resource_dir = "resource";
+            std::error_code ec;
+            for (const auto &entry : std::filesystem::directory_iterator(".", ec))
+            {
+                if (entry.is_directory() && storm::iEquals(entry.path().filename().string(), "resource"))
+                {
+                    resource_dir = entry.path().filename();
+                    break;
+                }
+            }
+            std::filesystem::copy(std::filesystem::path(bundle_path) / "resource", resource_dir,
+                                  std::filesystem::copy_options::recursive |
+                                      std::filesystem::copy_options::update_existing,
+                                  ec);
+            if (ec)
+            {
+                SDL_Log("Unable to copy engine resources: %s", ec.message().c_str());
+            }
+            SDL_free(bundle_path);
         }
         // game files are looked up case-insensitively through a scan of the working directory
         fio->ScanResourcePaths();

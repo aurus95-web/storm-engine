@@ -42,6 +42,20 @@ STORM_SETUP(
 
 add_dependencies(engine engine_techniques)
 
+if (NOT STORM_USE_CONAN)
+    # conanfile.py installs these folders in the Conan build
+    if (IOS)
+        set(engine_resource_dir "$<TARGET_BUNDLE_DIR:engine>/resource")
+    else()
+        set(engine_resource_dir "$<TARGET_FILE_DIR:engine>/resource")
+    endif()
+    add_custom_command(TARGET engine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/techniques" "${engine_resource_dir}/techniques"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/libs/shared_headers/include/shared" "${engine_resource_dir}/shared"
+        COMMENT "Copying engine resources"
+    )
+endif()
+
 if (APPLE)
     storm_apple_bundle_runtime(engine)
 endif()

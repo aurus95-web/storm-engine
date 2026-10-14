@@ -54,8 +54,11 @@ ninja -C build dependencies && ninja -C build
 - macOS: распаковать BNH, положить собранный `engine` и все `*.dylib` из `build/macos/Debug/`
   в папку игры (рядом с `engine.ini`), запускать из этой папки (`cd <BNH> && ./engine`).
   Поиск файлов игры регистронезависимый (сканирование рабочей папки, `FILE_SERVICE::ScanResourcePaths`).
+  Папку `resource/` из `build/macos/Debug/` (техники и шейдеры движка) тоже скопировать в папку игры
+  (слить с её `RESOURCE/`).
 - iPad: через Finder (iPad → Файлы) или приложение «Файлы» скопировать содержимое папки BNH
-  в Documents приложения. На iOS движок делает `chdir` в Documents (`SetupApplePlatform` в `main.cpp`).
+  в Documents приложения. На iOS движок делает `chdir` в Documents и сам копирует `resource/`
+  из бандла в папку игры (`SetupApplePlatform` в `main.cpp`).
 - Логи: `~/Library/Application Support/Akella/Sea Dogs/Logs` (или `stash`/`logs_folder` из `engine.ini`),
   лог DXVK — `*_d3d9.log` рядом с бинарником/в рабочей папке.
 - **Осторожно**: `xcrun devicectl device copy to ... --remove-existing-content true` стирает весь
@@ -73,12 +76,12 @@ ninja -C build dependencies && ninja -C build
    движок совместим с заголовками DXVK-форка, патч DXVK применяется и собирается.
    **На macOS ещё ни разу не собиралось** — первые ошибки сборки ожидаемы.
 2. [ ] Собрать и запустить на macOS, получить главное меню.
-3. [ ] HLSL-эффекты без D3DX. На не-Windows `RecompileEffects()` не вызывается (см. `s_device.cpp`,
-   `#ifdef _WIN32 // Effects`), работает только старая система техник (`CTechnique`).
-   Только как D3DX Effects существуют 26 техник: шрифты (`BmFont*`, `interfaces/font.fx`),
-   трава (`Grass*`, `effects/grass.fx`) и вся глобальная карта (`Wdm*`, `worldmap/worldmap.fx`).
-   Варианты: офлайн-компиляция HLSL в байткод SM2/3 (fxc на Windows-раннере или vkd3d-shader)
-   + небольшой исполнитель эффектов, либо порт эффектов из Wine `d3dx9_36/effect.c` (LGPL).
+3. [x] Шейдеры для не-Windows. На Windows `.fx` компилируются D3DX Effects, на остальных платформах
+   `CTechnique` сам разбирает `.fx` и грузит предкомпилированный байткод `<fx>_<функция>.vso/.pso`
+   (`GetShaderBinPath`), константы C++ передаёт напрямую в регистры (`#else` ветки рядом с `#ifdef _WIN32 // Effects`).
+   Не хватало `worldmap_main.vso` (облака) и `font_ps_font*.pso` (BmFont): добавлены, байткод шрифтов
+   генерирует `tools/shader-bins/font_shaders.py`, проверено `tools/shader-bins/test_shaders.cpp`
+   через DXVK на lavapipe. При новых HLSL-шейдерах в `.fx` нужно добавлять такие же бинарники.
 4. [ ] iPad: подпись, запуск, пути, производительность.
 5. [ ] Тач-управление: тап = клик, долгое нажатие = правый клик, щипок = колесо
    (см. раздел Touch input в playbook Generals), ввод текста, разрешение интерфейса.

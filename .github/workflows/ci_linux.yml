@@ -42,10 +42,11 @@ jobs:
     - name: Install libs
       run: |
         sudo apt-get update
-        sudo apt-get install -y clang ninja-build meson glslang-tools libvulkan-dev libffi-dev zlib1g-dev \
+        sudo apt-get install -y clang ninja-build meson glslang-tools libvulkan-dev libsdl2-dev libffi-dev zlib1g-dev \
           libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxxf86vm-dev \
           libwayland-dev libxkbcommon-dev libegl-dev libgl-dev libasound2-dev libpulse-dev
-    # third-party dependencies are fetched from git (STORM_USE_CONAN=OFF), same as on macOS/iOS
+    # third-party dependencies are fetched from git (STORM_USE_CONAN=OFF), same as on macOS/iOS;
+    # libsdl2-dev is only needed to build dxvk-native
     - name: Configure with cmake
       run: |
         cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.configuration }} \

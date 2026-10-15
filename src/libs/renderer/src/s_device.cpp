@@ -17,6 +17,7 @@
 #include <SDL_timer.h>
 
 #include <algorithm>
+#include <vector>
 #include <imgui_impl_sdl2.h>
 
 #ifdef _WIN32
@@ -24,6 +25,10 @@
 #include <corecrt_io.h>
 #else
 #include <unistd.h>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#include <sys/sysctl.h>
+#endif
 
 // replaces D3DX for loading raw images (PNG, JPEG, Targa, BMP) on other platforms
 #define STB_IMAGE_IMPLEMENTATION
@@ -51,6 +56,97 @@ CREATE_SCRIPTLIBRIARY(DX9RENDER_SCRIPT_LIBRIARY)
 namespace
 {
 constexpr auto kKeyTakeScreenshot = "TakeScreenshot";
+
+// Decodes the 4x4 block of a DXT1/DXT3/DXT5 texture into ARGB texels
+void DecodeDxtBlock(const uint8_t *block, D3DFORMAT format, uint32_t (&texels)[16])
+{
+    uint32_t alpha[16];
+    std::fill(std::begin(alpha), std::end(alpha), 255u);
+    if (format == D3DFMT_DXT3)
+    {
+        for (int i = 0; i < 16; i++)
+        {
+            alpha[i] = ((block[i / 2] >> ((i & 1) * 4)) & 0xF) * 17;
+        }
+        block += 8;
+    }
+    else if (format == D3DFMT_DXT5)
+    {
+        uint32_t a[8] = {block[0], block[1]};
+        if (a[0] > a[1])
+        {
+            for (int i = 1; i < 7; i++)
+                a[i + 1] = ((7 - i) * a[0] + i * a[1]) / 7;
+        }
+        else
+        {
+            for (int i = 1; i < 5; i++)
+                a[i + 1] = ((5 - i) * a[0] + i * a[1]) / 5;
+            a[6] = 0;
+            a[7] = 255;
+        }
+        uint64_t bits = 0;
+        for (int i = 0; i < 6; i++)
+            bits |= static_cast<uint64_t>(block[2 + i]) << (8 * i);
+        for (int i = 0; i < 16; i++)
+            alpha[i] = a[(bits >> (3 * i)) & 7];
+        block += 8;
+    }
+
+    const uint32_t c0 = block[0] | (block[1] << 8);
+    const uint32_t c1 = block[2] | (block[3] << 8);
+    uint32_t rgb[4][3];
+    const auto expand = [](uint32_t c, uint32_t(&out)[3]) {
+        out[0] = ((c >> 11) & 0x1F) * 255 / 31;
+        out[1] = ((c >> 5) & 0x3F) * 255 / 63;
+        out[2] = (c & 0x1F) * 255 / 31;
+    };
+    expand(c0, rgb[0]);
+    expand(c1, rgb[1]);
+    const bool fourColors = c0 > c1 || format != D3DFMT_DXT1;
+    for (int i = 0; i < 3; i++)
+    {
+        rgb[2][i] = fourColors ? (2 * rgb[0][i] + rgb[1][i]) / 3 : (rgb[0][i] + rgb[1][i]) / 2;
+        rgb[3][i] = fourColors ? (rgb[0][i] + 2 * rgb[1][i]) / 3 : 0;
+    }
+    for (int i = 0; i < 16; i++)
+    {
+        const uint32_t code = (block[4 + i / 4] >> ((i % 4) * 2)) & 3;
+        const uint32_t a = (!fourColors && code == 3) ? 0 : alpha[i];
+        texels[i] = (a << 24) | (rgb[code][0] << 16) | (rgb[code][1] << 8) | rgb[code][2];
+    }
+}
+
+// Decompresses a DXT mip level into a locked A8R8G8B8 surface
+void DecompressDxt(const std::vector<uint8_t> &data, D3DFORMAT format, uint32_t width, uint32_t height,
+                   const D3DLOCKED_RECT &lock)
+{
+    const size_t blockSize = format == D3DFMT_DXT1 ? 8 : 16;
+    const uint32_t blocksX = (width + 3) / 4;
+    const uint32_t blocksY = (height + 3) / 4;
+    uint32_t texels[16];
+    for (uint32_t by = 0; by < blocksY; by++)
+    {
+        for (uint32_t bx = 0; bx < blocksX; bx++)
+        {
+            const size_t offset = (static_cast<size_t>(by) * blocksX + bx) * blockSize;
+            if (offset + blockSize > data.size())
+            {
+                return;
+            }
+            DecodeDxtBlock(data.data() + offset, format, texels);
+            for (uint32_t y = 0; y < 4 && by * 4 + y < height; y++)
+            {
+                auto *row = reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(lock.pBits) +
+                                                         static_cast<size_t>(by * 4 + y) * lock.Pitch);
+                for (uint32_t x = 0; x < 4 && bx * 4 + x < width; x++)
+                {
+                    row[bx * 4 + x] = texels[y * 4 + x];
+                }
+            }
+        }
+    }
+}
 
 #ifdef _WIN32 // Screenshot
 D3DXIMAGE_FILEFORMAT GetScreenshotFormat(const std::string &fmt)
@@ -820,6 +916,36 @@ bool DX9RENDER::InitDevice(bool windowed, HWND _hwnd, int32_t width, int32_t hei
     effects_.setDevice(d3d9);
 #endif
 
+#if TARGET_OS_IPHONE
+    // Metal samples BC (DXT) textures on iOS 16.4 and later only, MoltenVK reports them as supported anyway
+    {
+        char version[32] = {};
+        size_t size = sizeof(version) - 1;
+        int major = 0;
+        int minor = 0;
+        if (sysctlbyname("kern.osproductversion", version, &size, nullptr, 0) == 0)
+        {
+            sscanf(version, "%d.%d", &major, &minor);
+        }
+        if (major < 16 || (major == 16 && minor < 4))
+        {
+            bDecompressDxt = true;
+        }
+    }
+#endif
+    for (const auto format : {D3DFMT_DXT1, D3DFMT_DXT3, D3DFMT_DXT5})
+    {
+        if (FAILED(d3d->CheckDeviceFormat(videoAdapterIndex, D3DDEVTYPE_HAL, D3DFMT_X8R8G8B8, 0, D3DRTYPE_TEXTURE,
+                                          format)))
+        {
+            bDecompressDxt = true;
+        }
+    }
+    if (bDecompressDxt)
+    {
+        spdlog::info("DXT textures are not supported by the device, decompressing them on load");
+    }
+
     if (core.IsEditorEnabled() )
     {
         core.InitializeEditor(d3d9);
@@ -1526,6 +1652,12 @@ bool DX9RENDER::TextureLoad(int32_t t)
     }
     d3dFormat = textureFormats[textureFI].d3dFormat;
     bool isSwizzled = textureFormats[textureFI].isSwizzled;
+    D3DFORMAT dxtFormat = D3DFMT_UNKNOWN;
+    if (bDecompressDxt && (d3dFormat == D3DFMT_DXT1 || d3dFormat == D3DFMT_DXT3 || d3dFormat == D3DFMT_DXT5))
+    {
+        dxtFormat = d3dFormat;
+        d3dFormat = D3DFMT_A8R8G8B8;
+    }
     const char *formatTxt = textureFormats[textureFI].format;
     // Skipping mips
     uint32_t seekposition = 0;
@@ -1582,7 +1714,8 @@ bool DX9RENDER::TextureLoad(int32_t t)
             else
             {
                 // read the mip
-                isError = !LoadTextureSurface(fileS, surface, head.mip_size, head.width, head.height, isSwizzled);
+                isError = !LoadTextureSurface(fileS, surface, head.mip_size, head.width, head.height, isSwizzled,
+                                              dxtFormat);
             }
             // Freeing the surface
             if (surface)
@@ -1667,7 +1800,7 @@ bool DX9RENDER::TextureLoad(int32_t t)
             fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
         }
         uint32_t sz =
-            LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_POSITIVE_Z, head.nmips, head.mip_size, head.width, isSwizzled);
+            LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_POSITIVE_Z, head.nmips, head.mip_size, head.width, isSwizzled, dxtFormat);
         if (sz)
         {
             Textures[t].dwSize += sz;
@@ -1676,7 +1809,7 @@ bool DX9RENDER::TextureLoad(int32_t t)
                 fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
             }
             sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_POSITIVE_X, head.nmips, head.mip_size, head.width,
-                                isSwizzled);
+                                isSwizzled, dxtFormat);
             if (sz)
             {
                 Textures[t].dwSize += sz;
@@ -1685,7 +1818,7 @@ bool DX9RENDER::TextureLoad(int32_t t)
                     fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
                 }
                 sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_NEGATIVE_Z, head.nmips, head.mip_size, head.width,
-                                    isSwizzled);
+                                    isSwizzled, dxtFormat);
                 if (sz)
                 {
                     Textures[t].dwSize += sz;
@@ -1694,7 +1827,7 @@ bool DX9RENDER::TextureLoad(int32_t t)
                         fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
                     }
                     sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_NEGATIVE_X, head.nmips, head.mip_size, head.width,
-                                        isSwizzled);
+                                        isSwizzled, dxtFormat);
                     if (sz)
                     {
                         Textures[t].dwSize += sz;
@@ -1703,7 +1836,7 @@ bool DX9RENDER::TextureLoad(int32_t t)
                             fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
                         }
                         sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_POSITIVE_Y, head.nmips, head.mip_size,
-                                            head.width, isSwizzled);
+                                            head.width, isSwizzled, dxtFormat);
                         if (sz)
                         {
                             Textures[t].dwSize += sz;
@@ -1712,7 +1845,7 @@ bool DX9RENDER::TextureLoad(int32_t t)
                                 fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
                             }
                             sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_NEGATIVE_Y, head.nmips, head.mip_size,
-                                                head.width, isSwizzled);
+                                                head.width, isSwizzled, dxtFormat);
                             if (!sz)
                             {
                                 isError = true;
@@ -1874,7 +2007,8 @@ IDirect3DBaseTexture9 *DX9RENDER::GetBaseTexture(int32_t iTexture)
 }
 
 uint32_t DX9RENDER::LoadCubmapSide(std::fstream &fileS, IDirect3DCubeTexture9 *tex, D3DCUBEMAP_FACES face,
-                                   uint32_t numMips, uint32_t mipSize, uint32_t size, bool isSwizzled)
+                                   uint32_t numMips, uint32_t mipSize, uint32_t size, bool isSwizzled,
+                                   D3DFORMAT dxtFormat)
 {
     uint32_t texsize = 0;
     // Filling the levels
@@ -1892,7 +2026,7 @@ uint32_t DX9RENDER::LoadCubmapSide(std::fstream &fileS, IDirect3DCubeTexture9 *t
         else
         {
             // read the mip
-            isError = !LoadTextureSurface(fileS, surface, mipSize, size, size, isSwizzled);
+            isError = !LoadTextureSurface(fileS, surface, mipSize, size, size, isSwizzled, dxtFormat);
         }
         // Freeing the surface
         if (surface)
@@ -1916,7 +2050,7 @@ uint32_t DX9RENDER::LoadCubmapSide(std::fstream &fileS, IDirect3DCubeTexture9 *t
 }
 
 bool DX9RENDER::LoadTextureSurface(std::fstream &fileS, IDirect3DSurface9 *suface, uint32_t mipSize, uint32_t width,
-                                   uint32_t height, bool isSwizzled)
+                                   uint32_t height, bool isSwizzled, D3DFORMAT dxtFormat)
 {
     //------------------------------------------------------------------------------------------
     // PC version
@@ -1926,6 +2060,16 @@ bool DX9RENDER::LoadTextureSurface(std::fstream &fileS, IDirect3DSurface9 *sufac
     if (CHECKD3DERR(suface->LockRect(&lock, NULL, 0L)) == true)
     {
         return false;
+    }
+    if (dxtFormat != D3DFMT_UNKNOWN)
+    {
+        std::vector<uint8_t> data(mipSize);
+        const bool isRead = fio->_ReadFile(fileS, data.data(), mipSize);
+        if (isRead)
+        {
+            DecompressDxt(data, dxtFormat, std::max(width, 1u), std::max(height, 1u), lock);
+        }
+        return !CHECKD3DERR(suface->UnlockRect()) && isRead;
     }
     // Reading out
     if (!fio->_ReadFile(fileS, lock.pBits, mipSize))

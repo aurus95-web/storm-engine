@@ -117,6 +117,11 @@ void SetupApplePlatform()
         {
             SDL_Log("Unable to switch to the Documents folder");
         }
+        // DXVK, MoltenVK and Metal validation report errors to stderr, which iOS discards
+        if (freopen("stderr.log", "w", stderr))
+        {
+            setvbuf(stderr, nullptr, _IONBF, 0);
+        }
 
         // engine resources (techniques, shaders) are shipped in the app bundle, but resources are
         // looked up in the working directory next to the game data, so they are synchronized there

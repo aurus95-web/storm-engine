@@ -110,10 +110,21 @@ ninja -C build dependencies && ninja -C build
    Xcode 27 установлен (минимальная iOS в его SDK — ровно 15.0). Сборка без подписи проходит за ~2 мин:
    `cmake --preset ios -DSTORM_IOS_BUNDLE_ID=com.aurus95.storm -DSTORM_MOLTENVK_PATH=<путь выше>
    -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO && cmake --build --preset ios-debug`; все dylib в бандле
-   собраны под iOS 15, предупреждений о недоступных API нет. Ждём: Apple ID в Xcode, подключённый iPad.
-   `xcrun devicectl` работает только с iOS 17+ — для iPad на iOS 15 ставить через Xcode (Devices and
-   Simulators) или `ideviceinstaller` (libimobiledevice).
-   Данные BNH — 16 ГБ, их надо скопировать в Documents приложения.
+   собраны под iOS 15, предупреждений о недоступных API нет.
+   **Работает на iPad Pro 12.9 M1, iPadOS 15.3.1 с джейлбрейком Dopamine (AppSync): главное меню.**
+   Xcode 27 iPad на iOS 15 не видит (ни `devicectl`, ни `xcdevice`) и не делает ad-hoc подпись для iOS, поэтому:
+   сборка без подписи → `tools/ios/package-adhoc.sh build/ios/Release/engine.app engine.ipa` (ad-hoc +
+   entitlements с повышенным лимитом памяти) → `ideviceinstaller upgrade engine.ipa` (не `install`: тот
+   пересоздаёт контейнер; UUID контейнера меняется и при upgrade — искать по bundle id).
+   Данные (16 ГБ, включая `modules/` — это данные игры, не Windows) копируются по SSH: OpenSSH+rsync из
+   Procursus, `iproxy 2222 22`, ключ `~/.ssh/ipad_bnh`, `rsync --rsync-path=/var/jb/usr/bin/rsync` в
+   `/var/mobile/Containers/Data/Application/<UUID>/Documents` (house_arrest/afcclient для ad-hoc приложений
+   даёт Permission denied). Отладка: на iOS `stderr` пишется в `Documents/stderr.log` (DXVK, MoltenVK, Metal);
+   отчёты о падениях — `idevicecrashreport` (у iOS дневной лимит отчётов: свежие могут не сохраняться),
+   журнал — `idevicesyslog`. Скриншоты с Mac невозможны (нет образа разработчика iOS 15 в Xcode 27).
+   Ограничения iPadOS < 16.4 / iOS < 17 и обходы: Metal не умеет BC/DXT — движок распаковывает DXT в A8R8G8B8
+   при загрузке (`bDecompressDxt`, по версии ОС: MoltenVK врёт, что поддерживает); нет динамического шага
+   вершин — в `dxvk-apple.patch` `dynamicVertexStridesSupported()` (шаг в состоянии конвейера).
    Вне Windows нельзя использовать `std::format` и вычисления с float в `<charconv>` (нужны macOS 13.3 / iOS 16.3).
 5. [ ] Тач-управление: тап = клик, долгое нажатие = правый клик, щипок = колесо
    (см. раздел Touch input в playbook Generals), ввод текста, разрешение интерфейса.

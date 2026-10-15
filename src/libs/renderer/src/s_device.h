@@ -325,10 +325,14 @@ class DX9RENDER : public VDX9RENDER
     HRESULT ImageBlt(int32_t nTextureId, RECT *pDstRect, RECT *pSrcRect) override;
 
     void MakeScreenShot();
+    // dxtFormat: DXT format of the file data to decompress into an A8R8G8B8 surface, D3DFMT_UNKNOWN to copy it
     bool LoadTextureSurface(std::fstream &fileS, IDirect3DSurface9 *suface, uint32_t mipSize, uint32_t width,
-                            uint32_t height, bool isSwizzled);
+                            uint32_t height, bool isSwizzled, D3DFORMAT dxtFormat = D3DFMT_UNKNOWN);
     uint32_t LoadCubmapSide(std::fstream &fileS, IDirect3DCubeTexture9 *tex, D3DCUBEMAP_FACES face, uint32_t numMips,
-                            uint32_t mipSize, uint32_t size, bool isSwizzled);
+                            uint32_t mipSize, uint32_t size, bool isSwizzled, D3DFORMAT dxtFormat = D3DFMT_UNKNOWN);
+
+    // DXT textures are not supported by the device (Metal on iOS before 16.4) and are decompressed on load
+    bool bDecompressDxt = false;
 
     // core interface
     bool Init() override;

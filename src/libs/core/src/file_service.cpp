@@ -4,6 +4,9 @@
 #include "platform/platform.hpp"
 
 #include <SDL2/SDL.h>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #include <exception>
 #include <string>
 
@@ -38,8 +41,11 @@ FILE_SERVICE::FILE_SERVICE()
     Max_File_Index = 0;
     for (uint32_t n = 0; n < _MAX_OPEN_INI_FILES; n++)
         OpenFiles[n] = nullptr;
+#if !TARGET_OS_IPHONE
+    // on iOS the working directory is "/" until main() switches to Documents and scans there
     if (ResourcePathsFirstScan)
         ScanResourcePaths();
+#endif
 }
 
 FILE_SERVICE::~FILE_SERVICE()
@@ -453,20 +459,26 @@ void FILE_SERVICE::ScanResourcePaths()
     }
     ResourcePaths.clear();
     std::string ExePath = "";
-    // folders that can not be read (e.g. in a sandbox) are skipped instead of aborting the scan
-    constexpr auto options = std::filesystem::directory_options::skip_permission_denied;
-    std::error_code ec;
-    for (const auto &entry : std::filesystem::recursive_directory_iterator(".", options, ec))
-    {
-        AddEntryToResourcePaths(entry, ExePath);
-    }
+    // folders that can not be read (e.g. in a sandbox) are skipped instead of aborting the scan,
+    // other errors (a sandbox may report EPERM) stop the scan instead of throwing
+    const auto scan = [this](const std::filesystem::path &root, std::string &checkingPath) {
+        constexpr auto options = std::filesystem::directory_options::skip_permission_denied;
+        std::error_code ec;
+        const std::filesystem::recursive_directory_iterator end;
+        for (std::filesystem::recursive_directory_iterator it(root, options, ec); !ec && it != end; it.increment(ec))
+        {
+            AddEntryToResourcePaths(*it, checkingPath);
+        }
+        if (ec)
+        {
+            spdlog::warn("Resource scan of '{}' stopped: {}", root.string(), ec.message());
+        }
+    };
+    scan(".", ExePath);
     ExePath = fio->_GetExecutableDirectory();
-    auto it = std::filesystem::recursive_directory_iterator(ExePath, options, ec);
+    const std::filesystem::path exeDir = ExePath;
     std::ranges::for_each(ExePath, [](char &c) { c = std::tolower(c); });
-    for (const auto &entry : it)
-    {
-        AddEntryToResourcePaths(entry, ExePath);
-    }
+    scan(exeDir, ExePath);
 #endif
     ResourcePathsFirstScan = false;
 }

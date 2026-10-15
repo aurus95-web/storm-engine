@@ -107,7 +107,12 @@ ninja -C build dependencies && ninja -C build
    MoltenVK для iOS (Homebrew собирает только macOS): релиз v1.4.1 `MoltenVK-ios.tar` распакован в
    `~/Developer/moltenvk-ios`, путь для `-DSTORM_MOLTENVK_PATH`:
    `~/Developer/moltenvk-ios/MoltenVK/MoltenVK/dynamic/MoltenVK.xcframework/ios-arm64/MoltenVK.framework`.
-   Ждём: установку Xcode (пока только Command Line Tools), Apple ID в Xcode, подключённый iPad.
+   Xcode 27 установлен (минимальная iOS в его SDK — ровно 15.0). Сборка без подписи проходит за ~2 мин:
+   `cmake --preset ios -DSTORM_IOS_BUNDLE_ID=com.aurus95.storm -DSTORM_MOLTENVK_PATH=<путь выше>
+   -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO && cmake --build --preset ios-debug`; все dylib в бандле
+   собраны под iOS 15, предупреждений о недоступных API нет. Ждём: Apple ID в Xcode, подключённый iPad.
+   `xcrun devicectl` работает только с iOS 17+ — для iPad на iOS 15 ставить через Xcode (Devices and
+   Simulators) или `ideviceinstaller` (libimobiledevice).
    Данные BNH — 16 ГБ, их надо скопировать в Documents приложения.
    Вне Windows нельзя использовать `std::format` и вычисления с float в `<charconv>` (нужны macOS 13.3 / iOS 16.3).
 5. [ ] Тач-управление: тап = клик, долгое нажатие = правый клик, щипок = колесо

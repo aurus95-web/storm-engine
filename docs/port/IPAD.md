@@ -142,7 +142,8 @@ cmake --preset ios -B build/ios-ma -DSTORM_IOS_BUNDLE_ID=<ваш.id> \
       -DSTORM_MOLTENVK_PATH=<.../MoltenVK.xcframework/ios-arm64/MoltenVK.framework> \
       -DSTORM_SOUND_MINIAUDIO=ON -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
 cmake --build build/ios-ma --config Release
-tools/ios/package-adhoc.sh build/ios-ma/Release/engine.app StormEngine.ipa
+python3 tools/ios/make_icon.py icon.png
+tools/ios/package-adhoc.sh build/ios-ma/Release/engine.app StormEngine.ipa icon.png "Storm Engine"
 ```
 
 ## Лицензии

@@ -3,7 +3,7 @@
 # jailbroken devices with AppSync Unified or TrollStore; Xcode refuses ad-hoc signing for iOS.
 #
 # Usage: tools/ios/package-adhoc.sh [--data <game folder> [--ini <engine.ini>]] [--sign <identity>] <engine.app> <output.ipa|output.app> [icon.png [display name]]
-# The icon (a square picture, not in the repository: the game art is copyrighted) is resized for the iPad.
+# The icon (a square picture; tools/ios/make_icon.py draws one without the art of the game) is resized for the iPad.
 # With --data the IPA carries the game too (in GameData of the app, without the Windows files, the WMV videos, the logs
 # and the saved games): the engine puts it into the Documents folder at the first start of every new data version,
 # keeping the engine.ini and options of the player. --ini replaces the engine.ini of the game folder (for the iPad).

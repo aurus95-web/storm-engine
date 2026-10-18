@@ -8,6 +8,8 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace storm
 {
@@ -54,17 +56,20 @@ class PCS_CONTROLS : public CONTROLS
     std::shared_ptr<storm::Input> input_;
     int inputHandlerID_ = 0;
 
-#ifdef __APPLE__
-    // touch screens: the on-screen buttons of the keys the current controls group needs;
-    // engine.ini [controls] touch_buttons = 1 shows them without a touch screen too
+    // touch screens (Apple): engine.ini [controls] touch_buttons = 1 shows the on-screen buttons without a touch screen
+    // too; the taps and the places of the icons of the game the taps are for
     bool m_bTouchButtons = false;
+    bool m_bTouchTap = false; // a tap in this frame
+    std::vector<std::array<float, 4>> m_aTouchPointerAreas; // added in the last frame: left, top, right, bottom
+    float m_fTouchTapX = 0.f, m_fTouchTapY = 0.f;
+    bool m_bGamepadActive = false; // used after the last touch: the touch buttons are hidden
+
+#ifdef __APPLE__
+    // touch screens: the on-screen buttons of the keys the current controls group needs
     int32_t m_nTouchFont = -1;
     float fTouchStickRestX = 0.f, fTouchStickRestY = 0.f;
     bool m_bTouchAtSea = false;
     uint32_t m_nTouchTaps = 0; // the taps counted by the input
-    bool m_bTouchTap = false;  // a tap in this frame
-    std::vector<std::array<float, 4>> m_aTouchPointerAreas; // added in the last frame: left, top, right, bottom
-    float m_fTouchTapX = 0.f, m_fTouchTapY = 0.f;
     bool m_bStickTurns = false; // the walking stick turns the character, else its keys turn
     // the gamepad: the keys of the controls that its buttons and its left stick press in the current group of the
     // controls (storm::GetGamepadControl), as the touch buttons do
@@ -73,7 +78,6 @@ class PCS_CONTROLS : public CONTROLS
     std::string m_sGamepadGroup;   // the group of the controls of the last frame
     uint32_t m_nGamepadBlocked = 0; // the buttons held when the group changed (bits): nothing until released
     uint32_t m_nGamepadDown = 0;    // the buttons pressed in the last frame (bits, without the stick)
-    bool m_bGamepadActive = false; // used after the last touch: the touch buttons are hidden
     float m_fGamepadStickX = 0.f;  // the left stick from -1 to 1
     float fGamepadRestX = 0.f, fGamepadRestY = 0.f;
     std::vector<std::string> m_aTouchLabels;

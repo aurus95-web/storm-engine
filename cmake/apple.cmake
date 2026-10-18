@@ -141,5 +141,11 @@ function(storm_apple_bundle_runtime target)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "${STORM_DXVK_LIBRARY}" "${STORM_SDL_LIBRARY}" "$<TARGET_FILE_DIR:${target}>/"
             COMMENT "Copying MoltenVK, DXVK and SDL2 next to ${target}"
         )
+        if (STORM_FMOD_DIR AND NOT STORM_SOUND_MINIAUDIO)
+            # the macOS FMOD library has the install name @rpath/libfmod.dylib (iOS links it statically)
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${STORM_FMOD_DIR}/api/core/lib/libfmod.dylib" "$<TARGET_FILE_DIR:${target}>/"
+            )
+        endif()
     endif()
 endfunction()

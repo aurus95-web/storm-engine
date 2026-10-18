@@ -27,6 +27,8 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<!-- An empty launch screen makes iOS give the app the native screen resolution -->
 	<key>UILaunchScreen</key>
 	<dict/>

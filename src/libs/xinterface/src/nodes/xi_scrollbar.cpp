@@ -257,6 +257,13 @@ void CXI_SCROLLBAR::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
         m_nBarWidth = -1;
     if (m_nBarWidth < 0 && m_nSideWidth < 0)
         m_nSideWidth = (m_rect.bottom - m_rect.top);
+    // Pirates of the Caribbean: the arrows at the sides are pictures as wide as high (barWidth leaves them a few pixels)
+    if (m_nBarWidth >= 0 && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN &&
+        (m_rect.right - m_rect.left - m_nBarWidth) / 2 < m_rect.bottom - m_rect.top)
+    {
+        m_nSideWidth = m_rect.bottom - m_rect.top;
+        m_nBarWidth = -1;
+    }
 
     m_nIndx /= 3;
     UpdatePosition();

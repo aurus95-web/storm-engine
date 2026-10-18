@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <cstdlib>
 #include <thread>
 
@@ -11,7 +12,17 @@
 
 #ifdef __APPLE__
 #include <TargetConditionals.h>
+#include <csignal>
+#include <ctime>
+#include <dlfcn.h>
+#include <execinfo.h>
+#include <fcntl.h>
+#include <mach-o/dyld.h>
 #include <unistd.h>
+#if TARGET_OS_IPHONE
+#include <fstream>
+#include <sys/clonefile.h>
+#endif
 #endif
 
 #include "core_private.h"
@@ -21,6 +32,7 @@
 #include "os_window.hpp"
 #include "steam_api.hpp"
 #include "storm/engine_settings.hpp"
+#include "storm/port_options.hpp"
 #include "string_compare.hpp"
 #include "v_sound_service.h"
 #include "watermark.hpp"
@@ -93,6 +105,93 @@ void mimalloc_fun(const char *msg, void *arg)
 #endif
 
 #ifdef __APPLE__
+// Crashes: the call stacks of the engine (crash.log next to the game data, symbolize with atos and the load address)
+// and of the scripts (script_stack.log); iOS keeps few crash reports
+void CrashSignalHandler(int sig, siginfo_t *info, void *context)
+{
+    // once: the crash information may abort, that must end the process and not come back here
+    static volatile sig_atomic_t handled = 0;
+    signal(sig, SIG_DFL);
+    if (handled)
+    {
+        raise(sig);
+        return;
+    }
+    handled = 1;
+    if (const int fd = open("crash.log", O_WRONLY | O_CREAT | O_APPEND, 0644); fd >= 0)
+    {
+        // the address the engine is loaded at (for atos -l), from this function
+        Dl_info dl{};
+        dladdr(reinterpret_cast<const void *>(&CrashSignalHandler), &dl);
+        dprintf(fd, "\n=== signal %d at %ld, load address %p, fault address %p\n", sig, static_cast<long>(time(nullptr)),
+                dl.dli_fbase, info ? info->si_addr : nullptr);
+#if defined(__arm64__)
+        // the crashed instruction and the registers (the call stack below starts at the caller of the crashed function)
+        if (context)
+        {
+            const auto &ss = static_cast<ucontext_t *>(context)->uc_mcontext->__ss;
+            dprintf(fd, "pc %p lr %p fp %p sp %p\n", reinterpret_cast<void *>(ss.__pc),
+                    reinterpret_cast<void *>(ss.__lr), reinterpret_cast<void *>(ss.__fp),
+                    reinterpret_cast<void *>(ss.__sp));
+            for (int i = 0; i < 29; i++)
+                dprintf(fd, "x%d %p%s", i, reinterpret_cast<void *>(ss.__x[i]), i % 4 == 3 ? "\n" : " ");
+            dprintf(fd, "\n");
+        }
+#endif
+        void *frames[128];
+        backtrace_symbols_fd(frames, backtrace(frames, 128), fd);
+        close(fd);
+    }
+    if (core_private)
+    {
+        core_private->collectCrashInfo();
+        spdlog::apply_all([](const std::shared_ptr<spdlog::logger> &logger) { logger->flush(); });
+    }
+    raise(sig);
+}
+
+#if TARGET_OS_IPHONE
+// An IPA with the game (tools/ios/package-adhoc.sh --data) carries it in GameData of the app bundle, which is read-only:
+// it is put into the Documents folder (the working directory) once per version of the data. The files are APFS clones,
+// which take no time and no space until changed. The settings of the player (engine.ini, options) and the saved games
+// are kept.
+void InstallBundledGameData(const std::filesystem::path &bundle)
+{
+    namespace fs = std::filesystem;
+    const auto data = bundle / "GameData";
+    std::error_code ec;
+    if (!fs::is_directory(data, ec))
+        return;
+    const auto readVersion = [](const fs::path &path) {
+        std::ifstream file(path);
+        std::string version;
+        std::getline(file, version);
+        return version;
+    };
+    const auto version = readVersion(data / ".version");
+    if (version.empty() || version == readVersion(".gamedata_version"))
+        return;
+    SDL_Log("Installing the game data %s", version.c_str());
+    for (auto it = fs::recursive_directory_iterator(data, ec); !ec && it != fs::recursive_directory_iterator();
+         it.increment(ec))
+    {
+        const auto relative = fs::relative(it->path(), data, ec);
+        if (it->is_directory(ec))
+        {
+            fs::create_directories(relative, ec);
+            continue;
+        }
+        const auto name = relative.string();
+        if (name == ".version" || (name == "engine.ini" || name == "options") && fs::exists(relative, ec))
+            continue;
+        fs::remove(relative, ec);
+        if (clonefile(it->path().c_str(), relative.c_str(), 0) != 0)
+            fs::copy_file(it->path(), relative, fs::copy_options::overwrite_existing, ec);
+    }
+    std::ofstream(".gamedata_version") << version << "\n";
+}
+#endif
+
 // DXVK and SDL load Vulkan (MoltenVK) at runtime, point SDL to the copy that is bundled with the engine
 // and, on iOS, run from the app's Documents folder which contains the game data
 void SetupApplePlatform()
@@ -106,6 +205,8 @@ void SetupApplePlatform()
 #endif
         // read by SDL_Vulkan_LoadLibrary(nullptr), which DXVK calls
         setenv("SDL_VULKAN_LIBRARY", moltenvk.c_str(), 0);
+        // the window of the engine is SDL2: DXVK would pick SDL3 if it was built with it too (SDL3 headers found)
+        setenv("DXVK_WSI_DRIVER", "SDL2", 0);
         SDL_free(base_path);
     }
 
@@ -117,7 +218,9 @@ void SetupApplePlatform()
         {
             SDL_Log("Unable to switch to the Documents folder");
         }
-        // DXVK, MoltenVK and Metal validation report errors to stderr, which iOS discards
+        // DXVK, MoltenVK and Metal validation report errors to stderr, which iOS discards;
+        // the previous log is kept, as the crash happens before the game is started again
+        std::rename("stderr.log", "stderr.prev.log");
         if (freopen("stderr.log", "w", stderr))
         {
             setvbuf(stderr, nullptr, _IONBF, 0);
@@ -127,6 +230,7 @@ void SetupApplePlatform()
         // looked up in the working directory next to the game data, so they are synchronized there
         if (char *bundle_path = SDL_GetBasePath())
         {
+            InstallBundledGameData(bundle_path);
             // the game folder is usually named RESOURCE, reuse it whatever the case is
             std::filesystem::path resource_dir = "resource";
             std::error_code ec;
@@ -214,6 +318,13 @@ int main(int argc, char *argv[])
 
 #ifdef __APPLE__
     SetupApplePlatform();
+    for (const int sig : {SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE})
+    {
+        struct sigaction action = {};
+        action.sa_sigaction = CrashSignalHandler;
+        action.sa_flags = SA_SIGINFO;
+        sigaction(sig, &action, nullptr);
+    }
 #endif
 
     // Prevent multiple instances
@@ -241,6 +352,10 @@ int main(int argc, char *argv[])
 #endif
 #endif // STORM_USE_MIMALLOC
 
+#ifdef __APPLE__
+    // the accelerometer of the iPad is not a joystick (the first one, before the gamepads)
+    SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+#endif
     SDL_InitSubSystem(SDL_INIT_EVENTS | SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);
 
     // Init diagnostics
@@ -249,6 +364,12 @@ int main(int argc, char *argv[])
         lifecycleDiagnostics.initialize(true);
 #else
         lifecycleDiagnostics.initialize(false);
+#endif
+#ifdef __APPLE__
+    // exit() (iOS ends a closed app so): the logging thread stops before the static destructors destroy spdlog,
+    // which is created first to be destroyed after this
+    spdlog::default_logger();
+    std::atexit([] { lifecycleDiagnostics.terminate(); });
 #endif
     if (!lifecycleDiagnosticsGuard)
     {
@@ -282,7 +403,12 @@ int main(int argc, char *argv[])
     core_private->EnableEditor(enable_editor);
     core_private->Init();
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    // the refresh rate of the iPad screens (ProMotion), more frames heat them up for nothing
+    uint32_t dwMaxFPS = static_cast<uint32_t>(ini->GetInt(nullptr, "max_fps", 120));
+#else
     uint32_t dwMaxFPS = static_cast<uint32_t>(ini->GetInt(nullptr, "max_fps", 0));
+#endif
     auto bDebugWindow = ini->GetInt(nullptr, "DebugWindow", 0) == 1;
     auto bAcceleration = ini->GetInt(nullptr, "Acceleration", 0) == 1;
     if (ini->GetInt(nullptr, "logs", 1) == 0) // disable logging
@@ -346,16 +472,48 @@ int main(int argc, char *argv[])
 
         if (bActive || run_in_background)
         {
-            if (dwMaxFPS)
+#ifdef __APPLE__
+            // the menus of the game do not need more than 30 frames: less heat
+            const auto dwFrameRate = storm::IsMenuActive() && (dwMaxFPS == 0 || dwMaxFPS > 30) ? 30u : dwMaxFPS;
+#else
+            const auto dwFrameRate = dwMaxFPS;
+#endif
+            if (dwFrameRate)
             {
-                const auto dwMS = 1000u / dwMaxFPS;
+                const auto dwMS = 1000u / dwFrameRate;
                 const auto dwNewTime = SDL_GetTicks();
                 if (dwNewTime - dwOldTime < dwMS)
+                {
+#ifdef __APPLE__
+                    // sleeping until the next frame without loading the processor: the sleep lasts longer than asked,
+                    // so most of the time is slept at once and the last 2 milliseconds by one millisecond (a late
+                    // frame would wait for the next refresh of the screen)
+                    const auto dwRest = dwMS - (dwNewTime - dwOldTime);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(dwRest > 3 ? dwRest - 2 : 1));
+#endif
                     continue;
+                }
                 dwOldTime = dwNewTime;
             }
 
             RunFrameWithOverflowCheck();
+#ifdef __APPLE__
+            // the frame rate in the log every 10 seconds (and the limit: the menus have 30)
+            {
+                static uint32_t dwFpsTime = SDL_GetTicks(), dwFrames = 0;
+                dwFrames++;
+                if (const auto dwNow = SDL_GetTicks(); dwNow - dwFpsTime >= 10000)
+                {
+                    spdlog::info("FPS {:.1f} (limit {})", dwFrames * 1000.0 / (dwNow - dwFpsTime), dwFrameRate);
+                    dwFpsTime = dwNow;
+                    dwFrames = 0;
+                }
+            }
+#endif
+#ifdef __APPLE__
+            // the options of the game change it (XI_NextEngineOption)
+            dwMaxFPS = static_cast<uint32_t>(ini->GetInt(nullptr, "max_fps", static_cast<int32_t>(dwMaxFPS)));
+#endif
         }
         else
         {
@@ -382,5 +540,20 @@ int main(int argc, char *argv[])
 #endif
     SDL_Quit();
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    // iOS keeps the app with a black screen when the main function returns; the app cannot start itself again
+    // (XI_RestartGame): the player does it. Without the static destructors: the logging thread still runs and
+    // aborts on its destroyed mutex
+    spdlog::shutdown();
+    fflush(nullptr);
+    _exit(EXIT_SUCCESS);
+#elif defined(__APPLE__)
+    // the restart from the options of the game (XI_RestartGame): the same executable with the same arguments
+    if (getenv("STORM_RESTART"))
+    {
+        unsetenv("STORM_RESTART");
+        execv(argv[0], argv);
+    }
+#endif
     return EXIT_SUCCESS;
 }

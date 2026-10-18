@@ -352,7 +352,9 @@ void XINTERFACE::Realize(uint32_t)
     // Do mouse move
     auto *pOldNode = m_pCurNode;
     MouseMove();
-    if (pOldNode != m_pCurNode)
+    // touch screens: a tap moves the cursor and clicks at once, only the click sounds
+    if (float pointerX, pointerY;
+        pOldNode != m_pCurNode && !core.Controls->GetPointerPosition(pointerX, pointerY))
     {
         core.Event(ISOUND_EVENT, "l", 2); // choosing a new node
     }
@@ -2294,6 +2296,15 @@ void XINTERFACE::MouseMove()
     CONTROL_STATE csv, csh;
     core.Controls->GetControlState(INTERFACE_MOUSE_VERT, csv);
     core.Controls->GetControlState(INTERFACE_MOUSE_HORZ, csh);
+    // touch screens: the cursor (its hot spot) is where the finger is
+    float fPointerX, fPointerY;
+    if (core.Controls->GetPointerPosition(fPointerX, fPointerY))
+    {
+        csh.fValue = fPointerX * dwScreenWidth - m_lXMouse - fXMousePos;
+        csv.fValue = fYMousePos - (fPointerY * dwScreenHeight - m_lYMouse);
+        csh.lValue = csh.fValue != 0.f;
+        csv.lValue = csv.fValue != 0.f;
+    }
 
     float fOutX = 0.f;
     float fOutY = 0.f;

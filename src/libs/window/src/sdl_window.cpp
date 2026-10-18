@@ -2,6 +2,15 @@
 
 #include <SDL2/SDL_syswm.h>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+// the Objective-C runtime without its headers (the engine includes the Windows headers of DXVK)
+extern "C" void *sel_registerName(const char *name);
+extern "C" void objc_msgSend();
+#endif
+#endif
+
 namespace storm
 {
 SDLWindow::SDLWindow(int width, int height, int preferred_display, bool fullscreen, bool bordered)
@@ -20,6 +29,37 @@ SDLWindow::SDLWindow(int width, int height, int preferred_display, bool fullscre
     SDL_SetWindowBordered(window_.get(), bordered ? SDL_TRUE : SDL_FALSE);
     SDL_AddEventWatch(&SDLEventHandler, this);
 }
+
+#ifdef __APPLE__
+void SDLWindow::GetContentArea(float &left, float &top, float &right, float &bottom) const
+{
+    left = top = 0.f;
+    right = bottom = 1.f;
+#if TARGET_OS_IPHONE
+    // the left and right insets of the safe area (the Dynamic Island, the rounded corners), not the bottom one of the
+    // home indicator
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(window_.get(), &info) || !info.info.uikit.window)
+        return;
+    struct Insets
+    {
+        double top, left, bottom, right;
+    };
+    struct Rect
+    {
+        double x, y, width, height;
+    };
+    void *uiWindow = info.info.uikit.window;
+    const auto insets = reinterpret_cast<Insets (*)(void *, void *)>(objc_msgSend)(uiWindow, sel_registerName("safeAreaInsets"));
+    const auto bounds = reinterpret_cast<Rect (*)(void *, void *)>(objc_msgSend)(uiWindow, sel_registerName("bounds"));
+    if (bounds.width <= 0.0)
+        return;
+    left = static_cast<float>(insets.left / bounds.width);
+    right = 1.f - static_cast<float>(insets.right / bounds.width);
+#endif
+}
+#endif
 
 SDLWindow::~SDLWindow()
 {

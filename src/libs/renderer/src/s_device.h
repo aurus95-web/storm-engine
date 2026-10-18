@@ -325,6 +325,7 @@ class DX9RENDER : public VDX9RENDER
     HRESULT ImageBlt(int32_t nTextureId, RECT *pDstRect, RECT *pSrcRect) override;
 
     void MakeScreenShot();
+    HRESULT Present();
     // dxtFormat: DXT format of the file data to decompress into an A8R8G8B8 surface, D3DFMT_UNKNOWN to copy it
     bool LoadTextureSurface(std::fstream &fileS, IDirect3DSurface9 *suface, uint32_t mipSize, uint32_t width,
                             uint32_t height, bool isSwizzled, D3DFORMAT dxtFormat = D3DFMT_UNKNOWN);

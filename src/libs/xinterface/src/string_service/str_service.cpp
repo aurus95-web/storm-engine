@@ -2,12 +2,21 @@
 
 #include "core.h"
 #include "string_compare.hpp"
+#include "storm/port_options.hpp"
 
 #include "../xinterface.h"
 #include "s_import_func.h"
 #include "v_s_stack.h"
 
+#include <algorithm>
 #include <filesystem>
+#include <string>
+#include <vector>
+
+#ifdef __APPLE__
+#include <SDL2/SDL_vulkan.h>
+#include <TargetConditionals.h>
+#endif
 
 #define USER_BLOCK_BEGINER '{'
 #define USER_BLOCK_ENDING '}'
@@ -1571,6 +1580,495 @@ uint32_t _AddControlTreeNode(VS_STACK *pS)
 }
 
 //==============================================================
+// The settings of the engine (engine.ini) changed in the options of the game (the port to the iPad): sliders over
+// the values of "resolution" (screen_x x screen_y), "max_fps" and "msaa", from the smallest; the resolution and msaa
+// work after a restart
+namespace
+{
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+constexpr int32_t kDefaultMaxFps = 120;
+#else
+constexpr int32_t kDefaultMaxFps = 0;
+#endif
+
+// the resolutions with the proportions of the screen (its content area): from the smaller ones to the full one
+std::vector<std::pair<int32_t, int32_t>> GetResolutions()
+{
+    int width = 0, height = 0;
+    if (auto *window = core.GetWindow())
+    {
+        width = window->Width();
+        height = window->Height();
+#ifdef __APPLE__
+        if (window->SDLHandle())
+            SDL_Vulkan_GetDrawableSize(window->SDLHandle(), &width, &height);
+#endif
+        float left, top, right, bottom;
+        window->GetContentArea(left, top, right, bottom);
+        width = static_cast<int>(width * (right - left));
+        height = static_cast<int>(height * (bottom - top));
+    }
+    std::vector<std::pair<int32_t, int32_t>> resolutions;
+    for (const auto scale : {0.375f, 0.5f, 0.625f, 0.75f, 0.875f, 1.f})
+    {
+        const auto w = static_cast<int32_t>(width * scale) & ~1, h = static_cast<int32_t>(height * scale) & ~1;
+        if (w >= 640 && h >= 360)
+            resolutions.emplace_back(w, h);
+    }
+    return resolutions;
+}
+
+// the touch controls ([touch] of engine.ini, storm::GetPortOption)
+struct TouchOption
+{
+    const char *name;
+    int32_t min, max, step;
+};
+
+const TouchOption *GetTouchOption(const std::string_view name)
+{
+    static constexpr TouchOption options[] = {{"button_scale", 70, 130, 5},
+                                              {"stick_scale", 70, 150, 10},
+                                              {"camera_speed", 50, 200, 10},
+                                              {"zoom_speed", 50, 300, 25},
+                                              {"pad_camera_speed", 50, 250, 10},
+                                              {"pad_turn_speed", 50, 250, 10}};
+    for (const auto &option : options)
+        if (name == option.name)
+            return &option;
+    return nullptr;
+}
+
+struct EngineOption
+{
+    std::vector<std::string> values; // as the scripts show them
+    int32_t index;                   // of the current value, -1 if it is not in the list
+};
+
+EngineOption GetEngineOption(INIFILE &ini, const std::string_view name)
+{
+    EngineOption option{{}, -1};
+    const auto add = [&option](std::string value, bool current) {
+        if (current)
+            option.index = static_cast<int32_t>(option.values.size());
+        option.values.push_back(std::move(value));
+    };
+    if (name == "resolution")
+    {
+        const std::pair<int32_t, int32_t> current(ini.GetInt(nullptr, "screen_x", 1024),
+                                                  ini.GetInt(nullptr, "screen_y", 768));
+        for (const auto &resolution : GetResolutions())
+            add(std::to_string(resolution.first) + "x" + std::to_string(resolution.second), resolution == current);
+    }
+    else if (name == "max_fps")
+    {
+        const auto current = ini.GetInt(nullptr, "max_fps", kDefaultMaxFps);
+        for (int32_t fps = 30; fps <= 120; fps += 10)
+            add(std::to_string(fps), fps == current);
+    }
+    else if (const auto *touch = GetTouchOption(name))
+    {
+        // in percent of the defaults
+        const auto current = storm::GetPortOption(touch->name);
+        for (auto value = touch->min; value <= touch->max; value += touch->step)
+            add(std::to_string(value), value == current);
+    }
+    else if (name == "msaa")
+    {
+        const auto current = ini.GetInt(nullptr, "msaa", 0);
+        for (const int32_t samples : {0, 2, 4})
+            add(std::to_string(samples), samples == current || (samples == 0 && current == 1));
+    }
+    return option;
+}
+
+void SetEngineOption(INIFILE &ini, const std::string_view name, int32_t index)
+{
+    const auto option = GetEngineOption(ini, name);
+    if (index < 0 || index >= static_cast<int32_t>(option.values.size()) || index == option.index)
+        return;
+    const auto &value = option.values[index];
+    if (const auto *touch = GetTouchOption(name))
+    {
+        storm::SetPortOption(touch->name, std::atoi(value.c_str()));
+        return;
+    }
+    if (name == "resolution")
+    {
+        const auto x = value.find('x');
+        ini.WriteString(nullptr, "screen_x", value.substr(0, x).c_str());
+        ini.WriteString(nullptr, "screen_y", value.substr(x + 1).c_str());
+    }
+    else
+        ini.WriteString(nullptr, std::string(name).c_str(), value.c_str());
+    ini.Flush();
+}
+
+const char *PopString(VS_STACK *pS)
+{
+    auto *pV = (VDATA *)pS->Pop();
+    const char *value = nullptr;
+    if (pV)
+        pV->Get(value);
+    return value ? value : "";
+}
+} // namespace
+
+// the current value of the setting (the value in engine.ini, if it is not one of the slider)
+uint32_t _XI_GetEngineOption(VS_STACK *pS)
+{
+    const std::string name = PopString(pS);
+    std::string value;
+    if (auto ini = fio->OpenIniFile(core.EngineIniFileName()))
+    {
+        const auto option = GetEngineOption(*ini, name);
+        if (option.index >= 0)
+            value = option.values[option.index];
+        else if (const auto *touch = GetTouchOption(name))
+            value = std::to_string(storm::GetPortOption(touch->name));
+        else if (name == "resolution")
+            value = std::to_string(ini->GetInt(nullptr, "screen_x", 1024)) + "x" +
+                    std::to_string(ini->GetInt(nullptr, "screen_y", 768));
+        else
+            value = std::to_string(ini->GetInt(nullptr, name.c_str(), name == "max_fps" ? kDefaultMaxFps : 0));
+    }
+    auto *pVR = (VDATA *)pS->Push();
+    if (!pVR)
+        return IFUNCRESULT_FAILED;
+    pVR->Set(value.c_str());
+    return IFUNCRESULT_OK;
+}
+
+// the number of the values (the positions of the slider)
+uint32_t _XI_GetEngineOptionCount(VS_STACK *pS)
+{
+    const std::string name = PopString(pS);
+    auto ini = fio->OpenIniFile(core.EngineIniFileName());
+    auto *pVR = (VDATA *)pS->Push();
+    if (!pVR)
+        return IFUNCRESULT_FAILED;
+    pVR->Set(static_cast<int32_t>(ini ? GetEngineOption(*ini, name).values.size() : 0));
+    return IFUNCRESULT_OK;
+}
+
+// the position of the current value, the nearest one to the value in engine.ini if it is not in the list
+uint32_t _XI_GetEngineOptionIndex(VS_STACK *pS)
+{
+    const std::string name = PopString(pS);
+    int32_t index = 0;
+    if (auto ini = fio->OpenIniFile(core.EngineIniFileName()))
+    {
+        const auto option = GetEngineOption(*ini, name);
+        index = option.index;
+        if (index < 0)
+        {
+            // the first value not smaller than the current one
+            const auto *touch = GetTouchOption(name);
+            const auto current = touch                  ? storm::GetPortOption(touch->name)
+                                 : name == "resolution" ? ini->GetInt(nullptr, "screen_x", 1024)
+                                                        : ini->GetInt(nullptr, name.c_str(), kDefaultMaxFps);
+            index = 0;
+            while (index + 1 < static_cast<int32_t>(option.values.size()) &&
+                   std::atoi(option.values[index].c_str()) < current)
+                index++;
+        }
+    }
+    auto *pVR = (VDATA *)pS->Push();
+    if (!pVR)
+        return IFUNCRESULT_FAILED;
+    pVR->Set(index);
+    return IFUNCRESULT_OK;
+}
+
+uint32_t _XI_SetEngineOptionIndex(VS_STACK *pS)
+{
+    auto *pIndex = (VDATA *)pS->Pop();
+    if (!pIndex)
+        return IFUNCRESULT_FAILED;
+    int32_t index = 0;
+    pIndex->Get(index);
+    const std::string name = PopString(pS);
+    if (auto ini = fio->OpenIniFile(core.EngineIniFileName()))
+        SetEngineOption(*ini, name, index);
+    return IFUNCRESULT_OK;
+}
+
+// The buttons of the gamepad in the options of the game: the modes (the groups of the controls of the scripts), the
+// actions of each one and the buttons (the names of Xbox; not the Xbox button, iPadOS takes it)
+namespace
+{
+struct GamepadAction
+{
+    const char *control, *label;
+};
+
+struct GamepadMode
+{
+    const char *group, *label;
+    std::vector<GamepadAction> actions;
+};
+
+const std::vector<GamepadMode> &GetGamepadModes()
+{
+    static const GamepadAction menu = {"MainMenu", "Меню"}, hero = {"Interface", "Герой"},
+                               time = {"TimeScale", "Ускорение времени"};
+    static const std::vector<GamepadMode> modes = {
+        {"PrimaryLand",
+         "Суша",
+         {{"BIFastCommand", "Выполнить"},
+          {"ChrAction", "Действие"},
+          {"ChrFightMode", "Оружие"},
+          {"LICommandsActivate", "Меню команд"},
+          {"hk_Cure", "Лечение"},
+          {"hk_Rush", "Натиск"},
+          {"ChrRun", "Бег"},
+          {"ChrCamCameraSwitch", "Камера"},
+          time,
+          menu,
+          hero}},
+        {"FightModeControls",
+         "Бой",
+         {{"ChrAttack", "Удар"},
+          {"ChrBlock", "Блок"},
+          {"ChrFire", "Выстрел"},
+          {"ChrRecoil", "Отскок"},
+          {"ChrFightMode", "Убрать оружие"},
+          {"hk_Cure", "Лечение"},
+          {"hk_Rush", "Натиск"},
+          {"ChrRun", "Бег"},
+          {"LICommandsActivate", "Меню команд"},
+          menu,
+          hero}},
+        {"Sailing3Pers",
+         "Море",
+         {{"Ship_Fire", "Залп"},
+          {"BIFastCommand", "Выполнить"},
+          {"Sea_CameraSwitch", "Камера"},
+          {"BICommandsActivate", "Меню команд"},
+          {"ShipCamera_Forward", "Ближе"},
+          {"ShipCamera_Backward", "Дальше"},
+          {"hk_charge1", "Ядра"},
+          {"hk_charge2", "Картечь"},
+          {"hk_charge3", "Книппели"},
+          {"hk_charge4", "Бомбы"},
+          {"Ship_SailUp", "Паруса +"},
+          {"Ship_SailDown", "Паруса -"},
+          {"Ship_TurnLeft", "Поворот влево"},
+          {"Ship_TurnRight", "Поворот вправо"},
+          {"hk_ImmediateReload", "Быстрая перезарядка"},
+          {"hk_LightRepair", "Ремонт"},
+          {"hk_InstantRepair", "Быстрый ремонт"},
+          {"hk_Turn180", "Разворот"},
+          {"MiniMapZoomIn", "Мини-карта +"},
+          {"MiniMapZoomOut", "Мини-карта -"},
+          time,
+          menu,
+          hero}},
+        {"Sailing1Pers",
+         "Палуба",
+         {{"Ship_Fire", "Залп"},
+          {"BIFastCommand", "Выполнить"},
+          {"Sea_CameraSwitch", "Камера"},
+          {"BICommandsActivate", "Меню команд"},
+          {"TelescopeIn", "Труба +"},
+          {"TelescopeOut", "Труба -"},
+          {"Ship_SailUp", "Паруса +"},
+          {"Ship_SailDown", "Паруса -"},
+          {"Ship_TurnLeft", "Поворот влево"},
+          {"Ship_TurnRight", "Поворот вправо"},
+          {"hk_charge1", "Ядра"},
+          {"hk_charge2", "Картечь"},
+          {"hk_charge3", "Книппели"},
+          {"hk_charge4", "Бомбы"},
+          time,
+          menu,
+          hero}},
+        {"WorldMapControls",
+         "Карта",
+         {{"WMapCancel", "В море"},
+          {"WMapSkipEncounter", "Пропуск встречи"},
+          {"WMapCameraSwitch", "Обзор"},
+          {"WMapForward", "Ближе"},
+          {"WMapBackward", "Дальше"},
+          {"WMapShipSailUp", "Вперёд"},
+          {"WMapShipSailDown", "Назад"},
+          {"WMapShipTurnLeft", "Поворот влево"},
+          {"WMapShipTurnRight", "Поворот вправо"},
+          menu,
+          hero}},
+        {"BattleInterfaceControls",
+         "Меню команд",
+         {{"BICommandsConfirm", "Выбрать"},
+          {"BICommandsCancel", "Назад"},
+          {"BICommandsLeft", "Влево"},
+          {"BICommandsRight", "Вправо"}}},
+        {"DialogControls",
+         "Диалог",
+         {{"DlgAction", "Выбрать"},
+          {"DlgCancel", "Выйти"},
+          {"DlgUp", "Вверх"},
+          {"DlgDown", "Вниз"},
+          {"DlgScrollUp", "Прокрутка вверх"},
+          {"DlgScrollDown", "Прокрутка вниз"}}},
+    };
+    return modes;
+}
+
+// the names of the buttons (storm::kGamepadButtons) of Xbox
+constexpr const char *kGamepadButtonLabels[] = {"A",    "B",     "X",  "Y",  "View", "Xbox",  "Menu",  "L3",    "R3",
+                                                "LB",   "RB",    "Вверх", "Вниз", "Влево", "Вправо", "LT", "RT"};
+static_assert(std::size(kGamepadButtonLabels) == storm::kGamepadButtonsNum);
+
+const GamepadMode *GetGamepadMode(int32_t mode)
+{
+    const auto &modes = GetGamepadModes();
+    return mode >= 0 && mode < static_cast<int32_t>(modes.size()) ? &modes[mode] : nullptr;
+}
+
+const GamepadAction *GetGamepadAction(const GamepadMode *mode, int32_t row)
+{
+    return mode && row >= 0 && row < static_cast<int32_t>(mode->actions.size()) ? &mode->actions[row] : nullptr;
+}
+
+int32_t PopInt(VS_STACK *pS)
+{
+    auto *pV = (VDATA *)pS->Pop();
+    int32_t value = 0;
+    if (pV)
+        pV->Get(value);
+    return value;
+}
+} // namespace
+
+// the name of the mode, "" after the last one
+uint32_t _XI_GamepadModeName(VS_STACK *pS)
+{
+    const auto *mode = GetGamepadMode(PopInt(pS));
+    auto *pVR = (VDATA *)pS->Push();
+    if (!pVR)
+        return IFUNCRESULT_FAILED;
+    pVR->Set(mode ? mode->label : "");
+    return IFUNCRESULT_OK;
+}
+
+// "<action>: <buttons>" of the row of the mode ("" after the last action)
+uint32_t _XI_GamepadActionText(VS_STACK *pS)
+{
+    const auto row = PopInt(pS);
+    const auto *mode = GetGamepadMode(PopInt(pS));
+    std::string text;
+    if (const auto *action = GetGamepadAction(mode, row))
+    {
+        std::string buttons;
+        std::string group, control;
+        if (storm::GetGamepadCapture(group, control) && group == mode->group && control == action->control)
+            buttons = "нажмите кнопку геймпада";
+        else
+        {
+            for (int32_t n = 0; n < storm::kGamepadButtonsNum; n++)
+            {
+                if (storm::GetGamepadControl(mode->group, storm::kGamepadButtons[n]) == action->control)
+                    buttons += (buttons.empty() ? "" : ", ") + std::string(kGamepadButtonLabels[n]);
+            }
+        }
+        text = std::string("#") + action->label + ": " + (buttons.empty() ? "-" : buttons);
+    }
+    auto *pVR = (VDATA *)pS->Push();
+    if (!pVR)
+        return IFUNCRESULT_FAILED;
+    pVR->Set(text.c_str());
+    return IFUNCRESULT_OK;
+}
+
+// waits for a button of the gamepad for the action of the row (the controls give it the next pressed button); the
+// action waiting already loses its buttons
+uint32_t _XI_GamepadCaptureAction(VS_STACK *pS)
+{
+    const auto row = PopInt(pS);
+    const auto *mode = GetGamepadMode(PopInt(pS));
+    const auto *action = GetGamepadAction(mode, row);
+    if (!action)
+        return IFUNCRESULT_OK;
+    std::string group, control;
+    if (storm::GetGamepadCapture(group, control) && group == mode->group && control == action->control)
+    {
+        storm::StopGamepadCapture();
+        for (const auto *button : storm::kGamepadButtons)
+        {
+            if (storm::GetGamepadControl(mode->group, button) == action->control)
+                storm::SetGamepadControl(mode->group, button, "");
+        }
+    }
+    else
+        storm::StartGamepadCapture(mode->group, action->control);
+    return IFUNCRESULT_OK;
+}
+
+// 1 if a button was given to the waiting action since the last call
+uint32_t _XI_GamepadCaptureDone(VS_STACK *pS)
+{
+    auto *pVR = (VDATA *)pS->Push();
+    if (!pVR)
+        return IFUNCRESULT_FAILED;
+    pVR->Set(static_cast<int32_t>(storm::TakeGamepadCaptureDone() ? 1 : 0));
+    return IFUNCRESULT_OK;
+}
+
+// no action waits for a button
+uint32_t _XI_GamepadStopCapture(VS_STACK *pS)
+{
+    storm::StopGamepadCapture();
+    return IFUNCRESULT_OK;
+}
+
+// the default buttons of the mode
+uint32_t _XI_GamepadDefaults(VS_STACK *pS)
+{
+    if (const auto *mode = GetGamepadMode(PopInt(pS)))
+    {
+        storm::StopGamepadCapture();
+        for (const auto *button : storm::kGamepadButtons)
+            storm::SetGamepadControl(mode->group, button, storm::GetDefaultGamepadControl(mode->group, button));
+    }
+    return IFUNCRESULT_OK;
+}
+
+// the touch controls are drawn over the menu of their settings while it is open
+uint32_t _XI_SetTouchPreview(VS_STACK *pS)
+{
+    auto *pV = (VDATA *)pS->Pop();
+    if (!pV)
+        return IFUNCRESULT_FAILED;
+    int32_t preview = 0;
+    pV->Get(preview);
+    storm::SetTouchPreview(preview != 0);
+    return IFUNCRESULT_OK;
+}
+
+// the buttons of the group of the controls are drawn over the menu and moved by the finger ("": not)
+uint32_t _XI_SetTouchLayoutGroup(VS_STACK *pS)
+{
+    storm::SetTouchLayoutGroup(PopString(pS));
+    return IFUNCRESULT_OK;
+}
+
+// the default places of the buttons of the group
+uint32_t _XI_ResetTouchLayout(VS_STACK *pS)
+{
+    storm::ResetTouchLayout(PopString(pS));
+    return IFUNCRESULT_OK;
+}
+
+// the game is restarted after its exit (ExitProgram), the macOS one by itself: the resolution and msaa
+uint32_t _XI_RestartGame(VS_STACK *pS)
+{
+#ifdef __APPLE__
+    setenv("STORM_RESTART", "1", 1);
+#endif
+    return IFUNCRESULT_OK;
+}
+
+//==============================================================
 bool SCRIPT_INTERFACE_FUNCTIONS::Init()
 {
     IFUNCINFO sIFuncInfo;
@@ -1621,6 +2119,90 @@ bool SCRIPT_INTERFACE_FUNCTIONS::Init()
     sIFuncInfo.pFuncName = "LanguageGetFaderPic";
     sIFuncInfo.nArguments = 1;
     sIFuncInfo.pFuncAddress = _LanguageGetFaderPic;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "string";
+    sIFuncInfo.pFuncName = "XI_GetEngineOption";
+    sIFuncInfo.nArguments = 1;
+    sIFuncInfo.pFuncAddress = _XI_GetEngineOption;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "string";
+    sIFuncInfo.pFuncName = "XI_GamepadModeName";
+    sIFuncInfo.nArguments = 1;
+    sIFuncInfo.pFuncAddress = _XI_GamepadModeName;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "string";
+    sIFuncInfo.pFuncName = "XI_GamepadActionText";
+    sIFuncInfo.nArguments = 2;
+    sIFuncInfo.pFuncAddress = _XI_GamepadActionText;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "void";
+    sIFuncInfo.pFuncName = "XI_GamepadCaptureAction";
+    sIFuncInfo.nArguments = 2;
+    sIFuncInfo.pFuncAddress = _XI_GamepadCaptureAction;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "int";
+    sIFuncInfo.pFuncName = "XI_GamepadCaptureDone";
+    sIFuncInfo.nArguments = 0;
+    sIFuncInfo.pFuncAddress = _XI_GamepadCaptureDone;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "void";
+    sIFuncInfo.pFuncName = "XI_GamepadStopCapture";
+    sIFuncInfo.nArguments = 0;
+    sIFuncInfo.pFuncAddress = _XI_GamepadStopCapture;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "void";
+    sIFuncInfo.pFuncName = "XI_GamepadDefaults";
+    sIFuncInfo.nArguments = 1;
+    sIFuncInfo.pFuncAddress = _XI_GamepadDefaults;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "void";
+    sIFuncInfo.pFuncName = "XI_SetTouchLayoutGroup";
+    sIFuncInfo.nArguments = 1;
+    sIFuncInfo.pFuncAddress = _XI_SetTouchLayoutGroup;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "void";
+    sIFuncInfo.pFuncName = "XI_ResetTouchLayout";
+    sIFuncInfo.nArguments = 1;
+    sIFuncInfo.pFuncAddress = _XI_ResetTouchLayout;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "void";
+    sIFuncInfo.pFuncName = "XI_SetTouchPreview";
+    sIFuncInfo.nArguments = 1;
+    sIFuncInfo.pFuncAddress = _XI_SetTouchPreview;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "void";
+    sIFuncInfo.pFuncName = "XI_RestartGame";
+    sIFuncInfo.nArguments = 0;
+    sIFuncInfo.pFuncAddress = _XI_RestartGame;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "int";
+    sIFuncInfo.pFuncName = "XI_GetEngineOptionCount";
+    sIFuncInfo.nArguments = 1;
+    sIFuncInfo.pFuncAddress = _XI_GetEngineOptionCount;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "int";
+    sIFuncInfo.pFuncName = "XI_GetEngineOptionIndex";
+    sIFuncInfo.nArguments = 1;
+    sIFuncInfo.pFuncAddress = _XI_GetEngineOptionIndex;
+    core.SetScriptFunction(&sIFuncInfo);
+
+    sIFuncInfo.pReturnValueName = "void";
+    sIFuncInfo.pFuncName = "XI_SetEngineOptionIndex";
+    sIFuncInfo.nArguments = 2;
+    sIFuncInfo.pFuncAddress = _XI_SetEngineOptionIndex;
     core.SetScriptFunction(&sIFuncInfo);
 
     sIFuncInfo.pReturnValueName = "void";

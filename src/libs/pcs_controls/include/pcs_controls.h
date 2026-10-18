@@ -5,12 +5,15 @@
 
 #include <shared/controls.h>
 
+#include <array>
+#include <map>
 #include <memory>
 
 namespace storm
 {
 struct InputEvent;
 class Input;
+struct TouchButton;
 } // namespace storm
 
 struct SYSTEM_CONTROL_ELEMENT
@@ -27,6 +30,10 @@ class PCS_CONTROLS : public CONTROLS
     bool updateCursor_ = true;
 
     float fMouseSensivityX;
+    // engine.ini [controls] mouse_move_scale: multiplier of the mouse motion (the camera uses the raw motion)
+    float fMouseMoveScale = 1.0f;
+    float fMouseMoveRestX = 0.0f;
+    float fMouseMoveRestY = 0.0f;
     float fMouseSensivityY;
 
     int32_t nSystemControlsNum;
@@ -46,6 +53,53 @@ class PCS_CONTROLS : public CONTROLS
 
     std::shared_ptr<storm::Input> input_;
     int inputHandlerID_ = 0;
+
+#ifdef __APPLE__
+    // touch screens: the on-screen buttons of the keys the current controls group needs;
+    // engine.ini [controls] touch_buttons = 1 shows them without a touch screen too
+    bool m_bTouchButtons = false;
+    int32_t m_nTouchFont = -1;
+    float fTouchStickRestX = 0.f, fTouchStickRestY = 0.f;
+    bool m_bTouchAtSea = false;
+    uint32_t m_nTouchTaps = 0; // the taps counted by the input
+    bool m_bTouchTap = false;  // a tap in this frame
+    std::vector<std::array<float, 4>> m_aTouchPointerAreas; // added in the last frame: left, top, right, bottom
+    float m_fTouchTapX = 0.f, m_fTouchTapY = 0.f;
+    bool m_bStickTurns = false; // the walking stick turns the character, else its keys turn
+    // the gamepad: the keys of the controls that its buttons and its left stick press in the current group of the
+    // controls (storm::GetGamepadControl), as the touch buttons do
+    std::vector<int32_t> m_aGamepadKeys;
+    uint32_t m_nGamepadTime = 0;   // when it was used last (SDL_GetTicks)
+    std::string m_sGamepadGroup;   // the group of the controls of the last frame
+    uint32_t m_nGamepadBlocked = 0; // the buttons held when the group changed (bits): nothing until released
+    uint32_t m_nGamepadDown = 0;    // the buttons pressed in the last frame (bits, without the stick)
+    bool m_bGamepadActive = false; // used after the last touch: the touch buttons are hidden
+    float m_fGamepadStickX = 0.f;  // the left stick from -1 to 1
+    float fGamepadRestX = 0.f, fGamepadRestY = 0.f;
+    std::vector<std::string> m_aTouchLabels;
+    // the buttons drawn over the menu of the touch settings (storm::IsTouchPreview), the input does not have them
+    std::vector<storm::TouchButton> m_aTouchPreview;
+    bool m_bTouchPreview = false;
+    // the touch settings: the button moved by the finger (its name in the layout) and its center from the finger
+    std::string m_sTouchDragButton;
+    bool m_bTouchDragChecked = false;
+    float m_fTouchDragX = 0.f, m_fTouchDragY = 0.f;
+    float m_fTouchDragMoved = 0.f;   // how far the finger moved it
+    uint32_t m_nTouchEscapeTime = 0; // the Esc of the touch settings is pressed until this time (SDL_GetTicks)
+    // the pictures of the game on the buttons: a grid of cols x rows (and the selected ones in the right half)
+    struct TouchIcon
+    {
+        std::string texture;
+        int32_t cols = 1, rows = 1, index = -1;
+        bool selectedHalf = true;
+        bool selected = false;
+    };
+    std::vector<TouchIcon> m_aTouchIcons;
+    std::map<std::string, int32_t> m_TouchTextures;
+    int32_t m_nTouchCharge = -1; // the current charge at sea
+    void UpdateTouchButtons();
+    void DrawOverlay() override;
+#endif
 
   public:
     PCS_CONTROLS();
@@ -81,6 +135,14 @@ class PCS_CONTROLS : public CONTROLS
 
     void SetMouseSensivityX(float) override;
     void SetMouseSensivityY(float) override;
+    bool GetPointerPosition(float &x, float &y) override;
+    bool IsTouchScreen() override;
+    bool IsGamepadActive() override
+    {
+        return m_bGamepadActive;
+    }
+    bool GetTouchTap(float &x, float &y) override;
+    void AddTouchPointerArea(float left, float top, float right, float bottom) override;
 
     short GetAsyncKeyState(int vk) override;
     short GetKeyState(int vk) override;

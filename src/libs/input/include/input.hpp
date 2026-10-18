@@ -5,6 +5,7 @@
 #include <variant>
 #include <string>
 #include <memory>
+#include <vector>
 
 namespace storm
 {
@@ -109,6 +110,24 @@ struct InputEvent
     std::variant<std::string, KeyboardKey, MousePos, MouseKey, ControllerAxisState, ControllerButton> data;
 };
 
+//! On-screen button of a touch screen (the window is from 0 to 1): the key is pressed while a finger is on it,
+//! a toggle is switched by a touch
+struct TouchButton
+{
+    float left, top, right, bottom;
+    KeyboardKey key;
+    bool toggle = false;
+    //! a stick: key while it is pushed up, backKey down, farKey up to the edge; its horizontal position is MoveStick();
+    //! the button is the area where it appears under the finger
+    bool stick = false;
+    KeyboardKey backKey = 0;
+    KeyboardKey farKey = 0;
+    KeyboardKey leftKey = 0;  //!< while the stick is pushed to the left
+    KeyboardKey rightKey = 0; //!< to the right
+    //! an area of the pointer touches (the commands drawn by the game) over a stick: no key, the stick is not there
+    bool pointer = false;
+};
+
 //! Abstract input manager that handles all input events
 class Input
 {
@@ -148,6 +167,97 @@ class Input
     //! Current controller axis value
     //! \return current axis value, from -32768 to 32767 (0 to 32767 for triggers)
     virtual int ControllerAxisValue(const ControllerAxis &axis) const = 0;
+
+    //! Position of the touch that controls the cursor (touch screens)
+    //! \return true and the position in the window, from 0 to 1, while the last pointer input was a touch
+    virtual bool PointerPosition(float &x, float &y) const
+    {
+        return false;
+    }
+
+    //! A finger moved away from where it touched the screen works as a stick of a gamepad (the camera)
+    //! \return true and the touched and the current positions of the finger (from 0 to 1) while it is moved
+    virtual bool TouchStick(float &startX, float &startY, float &x, float &y) const
+    {
+        return false;
+    }
+
+    //! \return true and the position of the finger on the stick, from -1 to 1, while it is touched
+    virtual bool MoveStick(float &x, float &y) const
+    {
+        return false;
+    }
+    //! \return true and where the stick appeared (from 0 to 1) and its radius while it is touched
+    virtual bool MoveStickArea(float &centerX, float &centerY, float &radiusX, float &radiusY) const
+    {
+        return false;
+    }
+
+    //! \return true if the window is on a touch screen
+    virtual bool IsTouchScreen() const
+    {
+        return false;
+    }
+
+    //! Whether the touches press the left mouse button (a tap clicks, a held finger walks on land; at sea and on the
+    //! map that button zooms the camera)
+    virtual void SetTouchPress(bool press)
+    {
+    }
+
+    //! \return whether a finger (not on a button) touches the screen, where it touched and where it is (from 0 to 1)
+    virtual bool TouchPoint(float &startX, float &startY, float &x, float &y) const
+    {
+        return false;
+    }
+
+    //! The finger that touches the screen neither clicks nor drags (it moves a button of the touch settings)
+    virtual void CancelTouch()
+    {
+    }
+
+    //! \return the time (SDL_GetTicks) when a finger last touched the screen, 0 if never
+    virtual uint32_t LastTouchTime() const
+    {
+        return 0;
+    }
+
+    //! Whether a moved finger drags with the left mouse button (the menus: the sliders) instead of the camera stick
+    virtual void SetTouchDrag(bool drag)
+    {
+    }
+
+    //! The radius of the walking stick in the window heights
+    virtual void SetTouchStickRadius(float radius)
+    {
+    }
+
+    //! The part of the window (from 0 to 1) where the frame is drawn: the touches are in it
+    virtual void SetTouchArea(float left, float top, float right, float bottom)
+    {
+    }
+
+    //! \return the number of the taps on the screen since the start and the position of the last one (from 0 to 1)
+    virtual uint32_t TouchTaps(float &x, float &y) const
+    {
+        return 0;
+    }
+
+    //! On-screen buttons to press by touching them
+    virtual void SetTouchButtons(const std::vector<TouchButton> &buttons)
+    {
+    }
+    virtual const std::vector<TouchButton> &GetTouchButtons() const
+    {
+        static const std::vector<TouchButton> none;
+        return none;
+    }
+
+    //! \return true if the key is pressed by an on-screen button
+    virtual bool TouchButtonState(const KeyboardKey &key) const
+    {
+        return false;
+    }
 
     static std::shared_ptr<Input> Create();
 };

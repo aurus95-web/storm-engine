@@ -10,11 +10,16 @@
 #include "storm/engine_settings.hpp"
 #include "storm/font_loading.hpp"
 #include "string_compare.hpp"
+
+#include <map>
 #include "texture.h"
 #include "v_s_stack.h"
 
 #include <fmt/chrono.h>
 #include <SDL_timer.h>
+#ifdef __APPLE__
+#include <SDL_vulkan.h>
+#endif
 
 #include <algorithm>
 #include <vector>
@@ -849,7 +854,7 @@ bool DX9RENDER::InitDevice(bool windowed, HWND _hwnd, int32_t width, int32_t hei
     }
 
     d3dpp.MultiSampleType = D3DMULTISAMPLE_NONE;
-    for (auto samples = msaa; msaa > D3DMULTISAMPLE_2_SAMPLES; samples--)
+    for (auto samples = msaa; samples >= D3DMULTISAMPLE_2_SAMPLES; samples--)
     {
         if (SUCCEEDED(d3d->CheckDeviceMultiSampleType(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, d3dpp.BackBufferFormat, false,
                                                       static_cast<D3DMULTISAMPLE_TYPE>(samples), nullptr)))
@@ -1411,7 +1416,7 @@ bool DX9RENDER::DX9EndScene()
     if (bMakeShoot)
         MakeScreenShot();
 
-    const HRESULT hRes = d3d9->Present(nullptr, nullptr, nullptr, nullptr);
+    const HRESULT hRes = Present();
 
     if (hRes == D3DERR_DEVICELOST)
     {
@@ -1467,6 +1472,23 @@ int32_t DX9RENDER::TextureCreate(const char *fname)
 
     if (!bLoadTextureEnabled)
         return -1;
+
+#ifdef __APPLE__
+    // the pictures of the battle interface on the background of the icons of the items, for the touch screens
+    // (tools/touch-icons/game_icons.py): RESOURCE/Textures/touch/<the name> instead of the texture when it is there
+    if (!storm::iEquals(std::string_view(fname).substr(0, 6), "touch\\"))
+    {
+        static std::map<std::string, bool> touchTextures;
+        const auto touchName = std::string("touch\\") + fname;
+        auto it = touchTextures.find(touchName);
+        if (it == touchTextures.end())
+            it = touchTextures
+                     .emplace(touchName, fio->_FileOrDirectoryExists(("resource\\textures\\" + touchName).c_str()))
+                     .first;
+        if (it->second)
+            return TextureCreate(touchName.c_str());
+    }
+#endif
 
     for (int32_t i = 3; i >= -1; i--)
     {
@@ -1598,7 +1620,27 @@ bool DX9RENDER::TextureLoad(int32_t t)
         fn[d++] = fn[s];
     }
     // Opening the file
-    auto fileS = fio->_CreateFile(fn, std::ios::binary | std::ios::in);
+    std::fstream fileS;
+    // Pirates of the Caribbean keeps the localized textures (loading screens...) in a language folder:
+    // loading\sea.tga is loading\Russian\sea.tga, it is preferred to the English one next to it
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        static const std::string language = [] {
+            char buf[64] = {};
+            if (auto ini = fio->OpenIniFile("resource\\ini\\texts\\language.ini"))
+                ini->ReadString("COMMON", "defaultLanguage", buf, sizeof(buf), "");
+            return std::string(buf);
+        }();
+        const std::string name = fn;
+        const auto sep = name.find_last_of("\\/");
+        if (!language.empty() && sep != std::string::npos)
+        {
+            const auto localized = name.substr(0, sep + 1) + language + name.substr(sep);
+            fileS = fio->_CreateFile(localized.c_str(), std::ios::binary | std::ios::in);
+        }
+    }
+    if (!fileS.is_open())
+        fileS = fio->_CreateFile(fn, std::ios::binary | std::ios::in);
     if (!fileS.is_open())
     {
         // try to load without '.tx' (e.g. raw Targa)
@@ -1957,8 +1999,13 @@ bool DX9RENDER::TextureLoadUsingD3DX(const char* path, int32_t t)
     }
     delete[] data;
 
+    // the smaller copies too (the pictures drawn smaller than they are: the icons of the touch buttons)
+    uint32_t levels = 1;
+    for (auto w = width, h = height; w > 1 || h > 1; w = std::max(w / 2, 1), h = std::max(h / 2, 1))
+        levels++;
     IDirect3DTexture9 *pTex = nullptr;
-    if (!pixels || CHECKD3DERR(d3d9->CreateTexture(width, height, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &pTex, nullptr)))
+    if (!pixels ||
+        CHECKD3DERR(d3d9->CreateTexture(width, height, levels, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &pTex, nullptr)))
     {
         if (!pixels)
         {
@@ -1987,6 +2034,55 @@ bool DX9RENDER::TextureLoadUsingD3DX(const char* path, int32_t t)
             }
         }
         pTex->UnlockRect(0);
+    }
+    // each level: the average of 2x2 pixels of the previous one, the colours weighted by their alpha
+    std::vector<uint8_t> level(pixels, pixels + static_cast<size_t>(width) * height * 4);
+    for (uint32_t m = 1, w = width, h = height; m < levels; m++)
+    {
+        const auto nw = std::max(w / 2, 1u), nh = std::max(h / 2, 1u);
+        std::vector<uint8_t> next(static_cast<size_t>(nw) * nh * 4);
+        for (uint32_t y = 0; y < nh; y++)
+        {
+            for (uint32_t x = 0; x < nw; x++)
+            {
+                uint32_t sum[4] = {}, count = 0;
+                for (uint32_t dy = 0; dy < 2; dy++)
+                {
+                    for (uint32_t dx = 0; dx < 2; dx++)
+                    {
+                        const auto *p = &level[(static_cast<size_t>(std::min(y * 2 + dy, h - 1)) * w +
+                                                std::min(x * 2 + dx, w - 1)) * 4];
+                        for (int c = 0; c < 3; c++)
+                            sum[c] += p[c] * p[3];
+                        sum[3] += p[3];
+                        count++;
+                    }
+                }
+                auto *q = &next[(static_cast<size_t>(y) * nw + x) * 4];
+                for (int c = 0; c < 3; c++)
+                    q[c] = static_cast<uint8_t>(sum[3] ? sum[c] / sum[3] : 0);
+                q[3] = static_cast<uint8_t>(sum[3] / count);
+            }
+        }
+        if (CHECKD3DERR(pTex->LockRect(m, &rect, nullptr, 0)) == false)
+        {
+            for (uint32_t y = 0; y < nh; y++)
+            {
+                const auto *src = &next[static_cast<size_t>(y) * nw * 4];
+                auto *dst = static_cast<uint8_t *>(rect.pBits) + static_cast<size_t>(y) * rect.Pitch;
+                for (uint32_t x = 0; x < nw; x++, src += 4, dst += 4)
+                {
+                    dst[0] = src[2];
+                    dst[1] = src[1];
+                    dst[2] = src[0];
+                    dst[3] = src[3];
+                }
+            }
+            pTex->UnlockRect(m);
+        }
+        level = std::move(next);
+        w = nw;
+        h = nh;
     }
     stbi_image_free(pixels);
 
@@ -2141,6 +2237,11 @@ bool DX9RENDER::TextureRelease(int32_t texid)
     if (texid == -1)
     {
         return true;
+    }
+    // a wrong index or a texture released already (the balls of the sea released at the load of a game crashed)
+    if (texid < 0 || texid >= MAX_STEXTURES || Textures[texid].ref <= 0)
+    {
+        return false;
     }
     Textures[texid].ref--;
     if (Textures[texid].ref != 0)
@@ -3004,6 +3105,10 @@ void DX9RENDER::RunEnd()
 {
     // MakePostProcess();
 
+#ifdef __APPLE__
+    if (core.Controls)
+        core.Controls->DrawOverlay();
+#endif
     bInsideScene = false;
     DX9EndScene();
     if (progressTexture >= 0)
@@ -4473,6 +4578,9 @@ void DX9RENDER::ProgressView()
     if (back0Texture < 0)
         for (i = 0; i < 4; i++)
             v[i].color = 0;
+    // Pirates of the Caribbean has no full screen background: black around the picture, not the last frame
+    if (back0Texture < 0 && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        d3d9->Clear(0, nullptr, D3DCLEAR_TARGET, 0x0, 1.0f, 0x0);
     if (back0Texture >= 0)
     {
         DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1, 2, v, sizeof(v[0]),
@@ -4564,7 +4672,7 @@ void DX9RENDER::ProgressView()
     DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1, 2, v, sizeof(v[0]),
                     "ProgressTech");
     EndScene();
-    d3d9->Present(nullptr, nullptr, nullptr, nullptr);
+    Present();
     BeginScene();
     // Next frame
     loadFrame++;
@@ -4797,12 +4905,15 @@ bool DX9RENDER::GetRenderTargetAsTexture(IDirect3DTexture9 **tex)
 
     if (GetRenderTarget(&renderTarget) == D3D_OK && renderTarget->GetDesc(&desc) == D3D_OK)
     {
-        if (CreateTexture(desc.Width, desc.Height, 0, 0, desc.Format, D3DPOOL_DEFAULT, tex) == D3D_OK)
+        // GetRenderTargetData only copies into system memory surfaces, a video memory copy (which also
+        // resolves multisampling) is done by StretchRect into a render target texture
+        if (CreateTexture(desc.Width, desc.Height, 1, D3DUSAGE_RENDERTARGET, desc.Format, D3DPOOL_DEFAULT, tex) ==
+            D3D_OK)
         {
             IDirect3DSurface9 *pTexSurface;
             if ((*tex)->GetSurfaceLevel(0, &pTexSurface) == D3D_OK)
             {
-                if (GetRenderTargetData(renderTarget, pTexSurface) == D3D_OK)
+                if (d3d9->StretchRect(renderTarget, nullptr, pTexSurface, nullptr, D3DTEXF_NONE) == D3D_OK)
                 {
                     success = true;
                 }
@@ -4814,3 +4925,24 @@ bool DX9RENDER::GetRenderTargetAsTexture(IDirect3DTexture9 **tex)
     return success;
 }
 
+
+// the frame goes to the content area of the window (the safe area of the iPhones; the rest is cleared)
+HRESULT DX9RENDER::Present()
+{
+#ifdef __APPLE__
+    if (auto window = core.GetWindow())
+    {
+        float left, top, right, bottom;
+        window->GetContentArea(left, top, right, bottom);
+        int width = 0, height = 0;
+        SDL_Vulkan_GetDrawableSize(window->SDLHandle(), &width, &height);
+        if ((left > 0.f || top > 0.f || right < 1.f || bottom < 1.f) && width > 0 && height > 0)
+        {
+            const RECT rect = {static_cast<LONG>(left * width), static_cast<LONG>(top * height),
+                               static_cast<LONG>(right * width), static_cast<LONG>(bottom * height)};
+            return d3d9->Present(nullptr, &rect, nullptr, nullptr);
+        }
+    }
+#endif
+    return d3d9->Present(nullptr, nullptr, nullptr, nullptr);
+}

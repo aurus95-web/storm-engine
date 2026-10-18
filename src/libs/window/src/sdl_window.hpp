@@ -34,6 +34,9 @@ class SDLWindow : public OSWindow
 
     void *OSHandle() override;
     SDL_Window *SDLHandle() const override;
+#ifdef __APPLE__
+    void GetContentArea(float &left, float &top, float &right, float &bottom) const override;
+#endif
 
     void ProcessEvent(const SDL_WindowEvent &evt) const;
 

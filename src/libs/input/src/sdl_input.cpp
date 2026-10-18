@@ -4,6 +4,9 @@
 #include <SDL2/SDL_system.h>
 #include <SDL2/SDL_video.h>
 #include <windows.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <map>
 
 namespace storm
@@ -271,6 +274,19 @@ static const std::map<unsigned int, unsigned int> SDL_TO_VK_MAP{
     {SDL_SCANCODE_VOLUMEUP, VK_VOLUME_UP},
 };
 
+#ifdef __APPLE__
+// touches: the button is pressed while a finger is held longer than kTouchHoldTime, a tap clicks it for
+// kTouchClickTime; the distances are in the window size
+constexpr uint32_t kTouchHoldTime = 150;
+constexpr uint32_t kTouchTapTime = 300;
+constexpr uint32_t kTouchClickTime = 100;
+constexpr float kTouchDragDistance = 0.01f;
+constexpr float kPinchWheelScale = 20.f;
+// the stick: its radius in the window height, the dead zone and the far push in the radius
+constexpr float kMoveStickDeadZone = 0.3f;
+constexpr float kMoveStickFar = 0.85f;
+#endif
+
 inline KeyboardKey sdlToKey(unsigned int code)
 {
     auto it = SDL_TO_VK_MAP.find(code);
@@ -291,6 +307,10 @@ inline unsigned int keyToSDL(KeyboardKey key)
 SDLInput::SDLInput()
 {
     keyStates_ = SDL_GetKeyboardState(nullptr);
+#ifdef __APPLE__
+    // the touches are processed here (ProcessTouch), SDL would move the mouse by them relatively
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#endif
 #ifndef _WIN32
     // since SDL 2.0.18 breaks WINAPI mouse api
     SDL_SetRelativeMouseMode(SDL_TRUE);
@@ -325,9 +345,19 @@ void SDLInput::ProcessEvent(const SDL_Event &event)
     InputEvent out;
     out.type = InputEvent::Unknown;
 
+#ifdef __APPLE__
+    if (event.type == SDL_FINGERDOWN || event.type == SDL_FINGERMOTION || event.type == SDL_FINGERUP)
+    {
+        ProcessTouch(event, out);
+    }
+    else
+#endif
     // Mouse/keyboard
     if (event.type == SDL_MOUSEMOTION)
     {
+#ifdef __APPLE__
+        isPointerTouch_ = false;
+#endif
         out.type = InputEvent::MouseMove;
         out.data = MousePos{event.motion.xrel, event.motion.yrel};
     }
@@ -353,16 +383,24 @@ void SDLInput::ProcessEvent(const SDL_Event &event)
     }
     else if (event.type == SDL_CONTROLLERDEVICEADDED)
     {
-        // Try to open controller if it wasn't open already
-        if (!controller_)
+        // Try to open controller if it wasn't open already (or is the one disconnected without the removal event:
+        // iPadOS while the game was in the background)
+        if (!controller_ || !SDL_GameControllerGetAttached(controller_.get()))
             OpenController();
     }
     else if ((event.type == SDL_CONTROLLERDEVICEREMOVED) && (joyID_ == event.cdevice.which))
     {
-        // Close controller if it was removed
+        // Close controller if it was removed, another one connected takes its place
         controller_ = nullptr;
         joyID_ = -1;
+        OpenController();
     }
+#ifdef __APPLE__
+    else if (event.type == SDL_APP_DIDENTERFOREGROUND && controller_ && !SDL_GameControllerGetAttached(controller_.get()))
+    {
+        OpenController();
+    }
+#endif
     else if ((event.type == SDL_CONTROLLERAXISMOTION) && (joyID_ == event.caxis.which))
     {
         ControllerAxisState state;
@@ -430,6 +468,18 @@ int SDLInput::ControllerAxisValue(const ControllerAxis &axis) const
 
 bool SDLInput::MouseKeyState(const MouseKey &key) const
 {
+#ifdef __APPLE__
+    const auto now = SDL_GetTicks();
+    if (key == MouseKey::Left && touchPress_ &&
+        (now < clickReleaseTime_ ||
+         touch_.active && !touch_.swiped && !touch_.cancelled && now - touch_.downTime >= kTouchHoldTime))
+        return true;
+    // the menus: the finger drags the sliders and the scroll bars
+    if (key == MouseKey::Left && touchDrag_ && touch_.active && touch_.dragging && !touch_.cancelled)
+        return true;
+    if (key == MouseKey::Right && now < rightClickReleaseTime_)
+        return true;
+#endif
     uint32_t btn = SDL_GetMouseState(nullptr, nullptr);
     if (key == MouseKey::Left)
         return btn & SDL_BUTTON_LMASK ? true : false;
@@ -458,11 +508,385 @@ int SDLInput::SDLEventHandler(void *userdata, SDL_Event *evt)
     return 0;
 }
 
+bool SDLInput::PointerPosition(float &x, float &y) const
+{
+#ifdef __APPLE__
+    if (isPointerTouch_)
+    {
+        x = touch_.x;
+        y = touch_.y;
+        return true;
+    }
+#endif
+    return false;
+}
+
+bool SDLInput::TouchStick(float &startX, float &startY, float &x, float &y) const
+{
+#ifdef __APPLE__
+    if (touch_.active && touch_.dragging && pinchDistance_ < 0.f && !touchDrag_)
+    {
+        startX = touch_.startX;
+        startY = touch_.startY;
+        x = touch_.x;
+        y = touch_.y;
+        return true;
+    }
+#endif
+    return false;
+}
+
+void SDLInput::SetTouchArea(float left, float top, float right, float bottom)
+{
+#ifdef __APPLE__
+    if (right > left && bottom > top)
+        touchArea_ = {left, top, right, bottom};
+#endif
+}
+
+bool SDLInput::TouchPoint(float &startX, float &startY, float &x, float &y) const
+{
+#ifdef __APPLE__
+    if (touch_.active)
+    {
+        startX = touch_.startX;
+        startY = touch_.startY;
+        x = touch_.x;
+        y = touch_.y;
+        return true;
+    }
+#endif
+    return false;
+}
+
+void SDLInput::CancelTouch()
+{
+#ifdef __APPLE__
+    touch_.cancelled = true;
+#endif
+}
+
+uint32_t SDLInput::LastTouchTime() const
+{
+#ifdef __APPLE__
+    return lastTouchTime_;
+#else
+    return 0;
+#endif
+}
+
+void SDLInput::SetTouchDrag(bool drag)
+{
+#ifdef __APPLE__
+    touchDrag_ = drag;
+#endif
+}
+
+void SDLInput::SetTouchStickRadius(float radius)
+{
+#ifdef __APPLE__
+    if (radius > 0.f)
+        moveStickRadius_ = radius;
+#endif
+}
+
+void SDLInput::SetTouchPress(bool press)
+{
+#ifdef __APPLE__
+    touchPress_ = press;
+#endif
+}
+
+uint32_t SDLInput::TouchTaps(float &x, float &y) const
+{
+#ifdef __APPLE__
+    x = tapX_;
+    y = tapY_;
+    return taps_;
+#else
+    return 0;
+#endif
+}
+
+bool SDLInput::IsTouchScreen() const
+{
+#ifdef __APPLE__
+    for (int i = 0; i < SDL_GetNumTouchDevices(); i++)
+    {
+        if (SDL_GetTouchDeviceType(SDL_GetTouchDevice(i)) == SDL_TOUCH_DEVICE_DIRECT)
+            return true;
+    }
+#endif
+    return false;
+}
+
+void SDLInput::SetTouchButtons(const std::vector<TouchButton> &buttons)
+{
+#ifdef __APPLE__
+    buttons_ = buttons;
+    if (isMoveStick_ && std::none_of(buttons_.begin(), buttons_.end(), [](const auto &b) { return b.stick; }))
+        isMoveStick_ = false;
+    // a finger held since before the stick was there (a loading) becomes the stick
+    const auto inPointerArea = [this](float x, float y) {
+        return std::any_of(buttons_.begin(), buttons_.end(), [x, y](const auto &b) {
+            return b.pointer && x >= b.left && x <= b.right && y >= b.top && y <= b.bottom;
+        });
+    };
+    if (!isMoveStick_ && touch_.active && !touch_.cancelled && pinchDistance_ < 0.f &&
+        !inPointerArea(touch_.startX, touch_.startY))
+    {
+        for (const auto &button : buttons_)
+        {
+            if (button.stick && touch_.startX >= button.left && touch_.startX <= button.right &&
+                touch_.startY >= button.top && touch_.startY <= button.bottom)
+            {
+                touch_.active = false;
+                StartMoveStick(touch_.finger, touch_.x, touch_.y, button);
+                break;
+            }
+        }
+    }
+#endif
+}
+
+bool SDLInput::MoveStickArea(float &centerX, float &centerY, float &radiusX, float &radiusY) const
+{
+#ifdef __APPLE__
+    if (isMoveStick_)
+    {
+        centerX = moveCenterX_;
+        centerY = moveCenterY_;
+        radiusX = moveRadiusX_;
+        radiusY = moveRadiusY_;
+        return true;
+    }
+#endif
+    return false;
+}
+
+bool SDLInput::MoveStick(float &x, float &y) const
+{
+#ifdef __APPLE__
+    if (isMoveStick_)
+    {
+        x = moveX_;
+        y = moveY_;
+        return true;
+    }
+#endif
+    return false;
+}
+
+const std::vector<TouchButton> &SDLInput::GetTouchButtons() const
+{
+#ifdef __APPLE__
+    return buttons_;
+#else
+    return Input::GetTouchButtons();
+#endif
+}
+
+bool SDLInput::TouchButtonState(const KeyboardKey &key) const
+{
+#ifdef __APPLE__
+    if (isMoveStick_ && key != 0)
+    {
+        if (key == moveStick_.key && moveY_ < -kMoveStickDeadZone || key == moveStick_.backKey && moveY_ > kMoveStickDeadZone ||
+            key == moveStick_.farKey && moveY_ < -kMoveStickFar ||
+            key == moveStick_.leftKey && moveX_ < -kMoveStickDeadZone ||
+            key == moveStick_.rightKey && moveX_ > kMoveStickDeadZone)
+            return true;
+    }
+    for (const auto &[finger, fingerKey] : buttonFingers_)
+    {
+        if (fingerKey == key)
+            return true;
+    }
+    return std::find(toggledKeys_.begin(), toggledKeys_.end(), key) != toggledKeys_.end();
+#else
+    return false;
+#endif
+}
+
+#ifdef __APPLE__
+void SDLInput::ProcessTouch(const SDL_Event &event, InputEvent &out)
+{
+    // in the content area of the window (where the frame is drawn)
+    auto finger = event.tfinger;
+    finger.x = (finger.x - touchArea_[0]) / (touchArea_[2] - touchArea_[0]);
+    finger.y = (finger.y - touchArea_[1]) / (touchArea_[3] - touchArea_[1]);
+    // the trackpads of Mac are mice
+    if (SDL_GetTouchDeviceType(finger.touchId) != SDL_TOUCH_DEVICE_DIRECT)
+        return;
+    const auto now = SDL_GetTicks();
+    int width = 0, height = 0;
+    if (auto *window = SDL_GetWindowFromID(finger.windowID))
+        SDL_GetWindowSize(window, &width, &height);
+
+    if (width > 0)
+        heightToWidth_ = height * (touchArea_[3] - touchArea_[1]) / (width * (touchArea_[2] - touchArea_[0]));
+
+    if (event.type == SDL_FINGERDOWN)
+    {
+        lastTouchTime_ = now;
+        // the on-screen buttons and the areas of the pointer, then the stick under them
+        const TouchButton *touched = nullptr;
+        for (const auto stick : {false, true})
+        {
+            for (const auto &button : buttons_)
+            {
+                if (button.stick == stick && finger.x >= button.left && finger.x <= button.right &&
+                    finger.y >= button.top && finger.y <= button.bottom)
+                {
+                    touched = &button;
+                    break;
+                }
+            }
+            if (touched)
+                break;
+        }
+        if (touched && !touched->pointer)
+        {
+            const auto &button = *touched;
+            if (button.stick)
+                StartMoveStick(finger.fingerId, finger.x, finger.y, button);
+            else if (!button.toggle)
+                buttonFingers_[finger.fingerId] = button.key;
+            else if (const auto it = std::find(toggledKeys_.begin(), toggledKeys_.end(), button.key);
+                     it != toggledKeys_.end())
+                toggledKeys_.erase(it);
+            else
+                toggledKeys_.push_back(button.key);
+            return;
+        }
+        if (!touch_.active)
+        {
+            touch_ = Touch{finger.fingerId, finger.x, finger.y, finger.x, finger.y, now, true};
+            isPointerTouch_ = true;
+        }
+        else if (pinchDistance_ < 0.f)
+        {
+            // the second finger: pinch or a right click
+            pinchFinger_ = finger.fingerId;
+            pinchX_ = finger.x;
+            pinchY_ = finger.y;
+            pinchDistance_ = std::hypot(touch_.x - pinchX_, touch_.y - pinchY_);
+            pinchRest_ = pinchMoved_ = 0.f;
+            pinchDownTime_ = now;
+            touch_.cancelled = true;
+        }
+        return;
+    }
+
+    if (isMoveStick_ && finger.fingerId == moveFinger_)
+    {
+        if (event.type == SDL_FINGERUP)
+            isMoveStick_ = false;
+        else
+            UpdateMoveStick(finger.x, finger.y);
+        return;
+    }
+    if (buttonFingers_.count(finger.fingerId) != 0)
+    {
+        if (event.type == SDL_FINGERUP)
+            buttonFingers_.erase(finger.fingerId);
+        return;
+    }
+
+    if (event.type == SDL_FINGERMOTION)
+    {
+        if (touch_.active && finger.fingerId == touch_.finger)
+        {
+            touch_.x = finger.x;
+            touch_.y = finger.y;
+            if (!touch_.dragging && std::hypot(finger.x - touch_.startX, finger.y - touch_.startY) > kTouchDragDistance)
+            {
+                touch_.dragging = true;
+                touch_.swiped = now - touch_.downTime < kTouchHoldTime;
+            }
+        }
+        else if (pinchDistance_ >= 0.f && finger.fingerId == pinchFinger_)
+        {
+            pinchX_ = finger.x;
+            pinchY_ = finger.y;
+        }
+        if (pinchDistance_ >= 0.f && touch_.active)
+        {
+            const auto distance = std::hypot(touch_.x - pinchX_, touch_.y - pinchY_);
+            pinchMoved_ += std::abs(distance - pinchDistance_);
+            pinchRest_ += (distance - pinchDistance_) * kPinchWheelScale;
+            pinchDistance_ = distance;
+            const auto wheel = static_cast<int>(pinchRest_);
+            if (wheel != 0)
+            {
+                pinchRest_ -= static_cast<float>(wheel);
+                out.type = InputEvent::MouseWheel;
+                out.data = MousePos{0, wheel};
+            }
+        }
+        return;
+    }
+
+    // SDL_FINGERUP
+    if (pinchDistance_ >= 0.f && (finger.fingerId == pinchFinger_ || finger.fingerId == touch_.finger))
+    {
+        // a short touch of two fingers is a right click
+        if (pinchMoved_ < kTouchDragDistance && now - pinchDownTime_ < kTouchTapTime)
+            rightClickReleaseTime_ = now + kTouchClickTime;
+        pinchDistance_ = -1.f;
+    }
+    if (touch_.active && finger.fingerId == touch_.finger)
+    {
+        touch_.active = false;
+        // a tap: the button was not pressed while the finger was held
+        if (!touch_.dragging && !touch_.cancelled && now - touch_.downTime < kTouchHoldTime)
+        {
+            clickReleaseTime_ = now + kTouchClickTime;
+            taps_++;
+            tapX_ = touch_.x;
+            tapY_ = touch_.y;
+        }
+    }
+}
+#endif
+
+#ifdef __APPLE__
+void SDLInput::StartMoveStick(SDL_FingerID finger, float x, float y, const TouchButton &button)
+{
+    // the stick appears under the finger
+    isMoveStick_ = true;
+    moveFinger_ = finger;
+    moveStick_ = button;
+    moveCenterX_ = x;
+    moveCenterY_ = y;
+    moveRadiusY_ = moveStickRadius_;
+    moveRadiusX_ = moveStickRadius_ * heightToWidth_;
+    UpdateMoveStick(x, y);
+}
+
+void SDLInput::UpdateMoveStick(float x, float y)
+{
+    // the offset from where the finger touched in the radius, within the circle
+    moveX_ = (x - moveCenterX_) / moveRadiusX_;
+    moveY_ = (y - moveCenterY_) / moveRadiusY_;
+    if (const auto length = std::hypot(moveX_, moveY_); length > 1.f)
+    {
+        moveX_ /= length;
+        moveY_ /= length;
+    }
+}
+#endif
+
 void SDLInput::OpenController()
 {
-    // TODO: GameController selection, open only first for now
+    // the first gamepad (the other joysticks are not: the accelerometer of the iPad)
+    int index = 0;
+    while (index < SDL_NumJoysticks() && !SDL_IsGameController(index))
+        index++;
     controller_ = std::unique_ptr<SDL_GameController, std::function<void(SDL_GameController *)>>(
-        SDL_GameControllerOpen(0), &SDL_GameControllerClose);
+        index < SDL_NumJoysticks() ? SDL_GameControllerOpen(index) : nullptr, &SDL_GameControllerClose);
+    if (controller_)
+        fprintf(stderr, "Gamepad: %s\n", SDL_GameControllerName(controller_.get()));
 
     if (controller_)
         joyID_ = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller_.get()));

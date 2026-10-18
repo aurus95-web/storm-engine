@@ -74,6 +74,14 @@ class OSWindow
     //! \param id handler returned by subscribe()
     virtual void Unsubscribe(int id) = 0;
 
+    //! The part of the window to draw into, from 0 to 1: all of it, but the sides of the iPhones covered by the
+    //! Dynamic Island (their safe area)
+    virtual void GetContentArea(float &left, float &top, float &right, float &bottom) const
+    {
+        left = top = 0.f;
+        right = bottom = 1.f;
+    }
+
     //! Os-depended window handler (i.e. HWND on Windows)
     virtual void *OSHandle() = 0;
     virtual SDL_Window *SDLHandle() const = 0;

@@ -192,6 +192,41 @@ class CONTROLS : public SERVICE
 
     virtual void SetMouseSensivityY(float){};
 
+    // touch screens: the position of the finger in the window (from 0 to 1) to put the cursor at
+    virtual bool GetPointerPosition(float &x, float &y)
+    {
+        return false;
+    }
+
+    // touch screens: an area (from 0 to 1) of the commands drawn by the game in this frame, the touches there are taps
+    // and not the stick under it
+    virtual void AddTouchPointerArea(float left, float top, float right, float bottom)
+    {
+    }
+
+    // touch screens: true in the frame after a tap, with its position in the window (from 0 to 1)
+    virtual bool GetTouchTap(float &x, float &y)
+    {
+        return false;
+    }
+
+    // the touch screens (or the on-screen buttons shown for a test) get the touch interface
+    // the gamepad is used after the last touch (the touch controls are hidden then)
+    virtual bool IsGamepadActive()
+    {
+        return false;
+    }
+
+    virtual bool IsTouchScreen()
+    {
+        return false;
+    }
+
+    // drawn by the renderer over the frame (the on-screen buttons of touch screens)
+    virtual void DrawOverlay()
+    {
+    }
+
     virtual short GetAsyncKeyState(int vk)
     {
         return 0;

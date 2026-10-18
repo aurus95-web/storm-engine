@@ -139,6 +139,9 @@ void LocationCamera::Execute(uint32_t real_delta)
     const auto oldAx = ax;
     core.Controls->GetControlState("ChrCamTurnV", cs);
     dAx = -cs.lValue * 0.05f; //*0.005f;
+    // Pirates of the Caribbean: the camera pitch follows the mouse faster (the turn of the player is immediate)
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        dAx *= 2.0f;
     if (character->IsDead())
         dAx = 0.0f;
     auto kvax = 8.0f * dltTime;

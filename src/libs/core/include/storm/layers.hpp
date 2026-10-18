@@ -1,6 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <string_view>
+#include <utility>
+
+#include "string_compare.hpp"
 
 namespace storm
 {
@@ -76,6 +80,34 @@ constexpr std::string_view GetLayerName(size_t index)
     default:
         return "INVALID";
     }
+}
+
+// Index of a layer by its name, including the names of Pirates of the Caribbean scripts ("sea_realize",
+// "iRealize"...), -1 for an unknown name
+inline int32_t GetLayerIndexByName(std::string_view name)
+{
+    constexpr std::pair<std::string_view, int32_t> oldNames[] = {
+        {"iexecute", 4},      // INTERFACE_EXECUTE
+        {"irealize", 5},      // INTERFACE_REALIZE
+        {"fader_execute", 6}, // FADER_EXECUTE
+        {"fader_realize", 7}, // FADER_REALIZE
+        {"inf_realize", 13},  // INFO_REALIZE
+    };
+    for (const auto &[oldName, oldIndex] : oldNames)
+    {
+        if (iEquals(oldName, name))
+        {
+            return oldIndex;
+        }
+    }
+    for (int32_t i = 0; GetLayerName(i) != "INVALID"; i++)
+    {
+        if (iEquals(GetLayerName(i), name))
+        {
+            return i;
+        }
+    }
+    return -1;
 }
 
 } // namespace storm

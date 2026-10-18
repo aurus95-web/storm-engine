@@ -574,6 +574,12 @@ void BATTLE_NAVIGATOR::Init(VDX9RENDER *RenderService, Entity *pOwnerEI)
         sscanf(tmpstr, "%d,%d", &m_ChargePos.x, &m_ChargePos.y);
     m_ChargePos.x += m_XNavigator; // - m_NavigationWidth/2;
     m_ChargePos.y += m_YNavigator; // - m_NavigationHeight/2;
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        // Pirates of the Caribbean counts the charge position from the top left corner of the navigator
+        m_ChargePos.x -= m_NavigationWidth / 2;
+        m_ChargePos.y -= m_NavigationHeight / 2;
+    }
     m_ChargeSize.x = 32;
     m_ChargeSize.y = 32;
     if ((tmpstr = BIUtils::GetStringFromAttr(pARoot, "chargePictureSize", nullptr)) != nullptr)
@@ -640,6 +646,42 @@ void BATTLE_NAVIGATOR::Init(VDX9RENDER *RenderService, Entity *pOwnerEI)
     m_SailSize.y = 32;
     if ((tmpstr = BIUtils::GetStringFromAttr(pARoot, "sailstatePictureSize", nullptr)) != nullptr)
         sscanf(tmpstr, "%d,%d", &m_SailSize.x, &m_SailSize.y);
+
+    // touch screens: the navigator of Pirates of the Caribbean (made for 768 pixels high screens) as large on the
+    // screen as there, the same distances from the top right corner
+    auto touchScale = 1.f;
+    if (D3DVIEWPORT9 vp; core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN &&
+                         core.Controls->IsTouchScreen() && SUCCEEDED(rs->GetViewport(&vp)) && vp.Height > 768)
+    {
+        touchScale = vp.Height / 768.f;
+        const auto k = touchScale;
+        const auto oldX = m_XNavigator, oldY = m_YNavigator;
+        const auto right = static_cast<int32_t>(vp.Width) - (oldX + m_NavigationWidth / 2);
+        const auto top = oldY - m_NavigationHeight / 2;
+        const auto sc = [k](int32_t v) { return static_cast<int32_t>(std::lround(v * k)); };
+        m_NavigationWidth = sc(m_NavigationWidth);
+        m_NavigationHeight = sc(m_NavigationHeight);
+        m_XNavigator = static_cast<int32_t>(vp.Width) - sc(right) - m_NavigationWidth / 2;
+        m_YNavigator = sc(top) + m_NavigationHeight / 2;
+        const auto moveX = [&](int32_t x) { return m_XNavigator + sc(x - oldX); };
+        const auto moveY = [&](int32_t y) { return m_YNavigator + sc(y - oldY); };
+        m_ySpeedShow = moveY(m_ySpeedShow);
+        m_xShipSpeed = moveX(m_xShipSpeed);
+        m_xWindSpeed = moveX(m_xWindSpeed);
+        m_windWidth = sc(m_windWidth);
+        m_windHeight = sc(m_windHeight);
+        m_fFontScale *= k;
+        for (auto *pos : {&m_ChargePos, &m_PowderPos, &m_WindPos, &m_SailPos})
+        {
+            pos->x = moveX(pos->x);
+            pos->y = moveY(pos->y);
+        }
+        for (auto *size : {&m_ChargeSize, &m_PowderSize, &m_WindSize, &m_SailSize})
+        {
+            size->x = sc(size->x);
+            size->y = sc(size->y);
+        }
+    }
 
     // create buffers
     m_idEmptyVBuf =
@@ -722,7 +764,7 @@ void BATTLE_NAVIGATOR::Init(VDX9RENDER *RenderService, Entity *pOwnerEI)
         rs->UnLockVertexBuffer(m_idSpeedVBuf);
     }
     // map vertexes
-    m_fMapRadius = BIUtils::GetFloatFromAttr(pARoot, "mapRadius", 100.f);
+    m_fMapRadius = BIUtils::GetFloatFromAttr(pARoot, "mapRadius", 100.f) * touchScale;
     pV = static_cast<BI_ONETEXTURE_VERTEX *>(rs->LockVertexBuffer(m_idMapVBuf));
     if (pV != nullptr)
     {
@@ -1425,11 +1467,19 @@ void BATTLE_NAVIGATOR::UpdateCurrentCharge()
     int32_t curWindPic = m_curWindPic;
     int32_t curPowder = m_curPowder;
     int32_t isPowderRunOut = 0;
-    pVD->Get(curCharge, 0);
-    pVD->Get(curSailState, 1);
-    pVD->Get(curWindPic, 2);
-    pVD->Get(curPowder, 3);
-    pVD->Get(isPowderRunOut, 4);
+    if (!pVD->IsArray())
+    {
+        // Pirates of the Caribbean returns the charge type only
+        pVD->Get(curCharge);
+    }
+    else
+    {
+        pVD->Get(curCharge, 0);
+        pVD->Get(curSailState, 1);
+        pVD->Get(curWindPic, 2);
+        pVD->Get(curPowder, 3);
+        pVD->Get(isPowderRunOut, 4);
+    }
     m_bPowderRunOut = isPowderRunOut;
     if (curCharge == m_curCharge && curSailState == m_curSailState && curWindPic == m_curWindPic &&
         curPowder == m_curPowder)

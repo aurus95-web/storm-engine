@@ -73,7 +73,10 @@ class Player : public NPCharacter
   private:
     float lastChange;
     bool activatedDialog;
+    bool isTalkAction = false;
     bool isSpecialMode;
+    // Pirates of the Caribbean accelerates the time at sea only (TimeScale), here it does on land too
+    bool isTimeScale = false;
     bool isSetBlock;
     entid_t baterfl;
     bool shootgunMode;

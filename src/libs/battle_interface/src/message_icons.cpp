@@ -73,6 +73,9 @@ void MESSAGE_ICONS::Update(uint32_t deltaTime)
                 }
             }
 
+            // the scripts delete the icons of the characters (LoadLIStates)
+            if (m_pIconsAttr[i] && !ATTRIBUTES::IsAlive(m_pIconsAttr[i]))
+                m_pIconsAttr[i] = nullptr;
             // mark icons
             if (m_pIconsAttr[i])
             {
@@ -101,6 +104,8 @@ void MESSAGE_ICONS::Update(uint32_t deltaTime)
                         }
                     if (k < m_pMsgColumns[i].rowQ)
                         continue;
+                    if (m_pMsgColumns[i].rowQ >= m_nMsgIconRowQnt)
+                        break;
                     m_pMsgColumns[i].pRow[m_pMsgColumns[i].rowQ].pic = picNum;
                     m_pMsgColumns[i].pRow[m_pMsgColumns[i].rowQ].bottom =
                         static_cast<float>(m_nBottomY) - m_pMsgColumns[i].rowQ * (m_nMsgIconHeight + m_nMsgIconDist);

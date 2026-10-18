@@ -209,8 +209,16 @@ void SHIP_DESCRIBE_LIST::Add(int32_t mainChrIndex, int32_t chIdx, ATTRIBUTES *pC
     assert(pAttr != NULL);
     pr->pAttr = pAttr;
     int32_t lTmp;
-    SetNLongData(core.Event(BI_EVENT_GET_DATA, "ll", BIDT_SHIPPICTURE, chIdx), 4, &pr->pictureNum, 0,
-                 &pr->selectPictureNum, 0, &pr->textureNum, -1, &lTmp, 0); //&pr->isDead,false );
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        // Pirates of the Caribbean: picture, texture, is dead; the selected picture is found by the command list
+        SetNLongData(core.Event(BI_EVENT_GET_DATA, "ll", BIDT_SHIPPICTURE, chIdx), 3, &pr->pictureNum, 0,
+                     &pr->textureNum, -1, &lTmp, 0);
+        pr->selectPictureNum = pr->pictureNum;
+    }
+    else
+        SetNLongData(core.Event(BI_EVENT_GET_DATA, "ll", BIDT_SHIPPICTURE, chIdx), 4, &pr->pictureNum, 0,
+                     &pr->selectPictureNum, 0, &pr->textureNum, -1, &lTmp, 0); //&pr->isDead,false );
     pr->isDead = lTmp != 0;
 
     pr->next = nullptr;
@@ -251,8 +259,8 @@ void SHIP_DESCRIBE_LIST::Add(int32_t mainChrIndex, int32_t chIdx, ATTRIBUTES *pC
         ptmp->next = pr;
     }
 
-    // if(pChAttr->GetAttributeAsDword("MainCharacter",0)!=0)
-    if (mainChrIndex == chIdx)
+    // Pirates of the Caribbean has no MainChrIndex: the main character has the attribute MainCharacter = 1
+    if (mainChrIndex == chIdx || (mainChrIndex < 0 && pChAttr->GetAttributeAsDword("MainCharacter", 0) != 0))
     {
         mainCharacter = pr;
         pMainShipAttr = pShipAttr;

@@ -31,6 +31,17 @@ namespace {
 // Material colors are written as "r,g,b,a" floats in rigging.ini, "#rrggbb" and integers are accepted too
 std::array<float, 4> GetMaterialColor(const Data &node, const std::array<float, 4> &default_value)
 {
+    // the ini reader turns "0.3,0.3,0.3,0.3" into an array of numbers
+    if (node.is_array() && node.size() == 4) {
+        std::array<float, 4> color{};
+        for (size_t i = 0; i < 4; i++) {
+            if (!node[i].is_number()) {
+                return default_value;
+            }
+            color[i] = node[i].get<float>();
+        }
+        return color;
+    }
     if (node.is_string()) {
         std::array<float, 4> color{};
         const auto value = node.get<std::string>();

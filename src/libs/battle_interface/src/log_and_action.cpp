@@ -1,6 +1,7 @@
 #include "log_and_action.h"
 #include "controls.h"
 #include "core.h"
+#include "bi_utils.h"
 #include "message.h"
 #include "string_compare.hpp"
 #include "shared/battle_interface/log_msg.h"
@@ -277,6 +278,21 @@ void ILogAndActions::Realize(uint32_t delta_time)
     }
 }
 
+// touch screens: the icon as large as the on-screen buttons; returns how much further its right edge goes
+int32_t ILogAndActions::ScaleIconForTouch()
+{
+    int32_t screenHeight;
+    const auto k = BIUtils::GetTouchIconScale(m_nIconHeight, screenHeight);
+    if (k == 1.f)
+        return 0;
+    const auto right = m_nIconLeft + m_nIconWidth;
+    m_nIconWidth = static_cast<int32_t>(std::lround(m_nIconWidth * k));
+    m_nIconHeight = static_cast<int32_t>(std::lround(m_nIconHeight * k));
+    m_nIconLeft = static_cast<int32_t>(std::lround(m_nIconLeft * k));
+    m_nIconUp = static_cast<int32_t>(std::lround(m_nIconUp * k));
+    return m_nIconLeft + m_nIconWidth - right;
+}
+
 void ILogAndActions::Create(bool bFastComShow, bool bLogStringShow)
 {
     m_bShowActiveCommand = bFastComShow;
@@ -293,6 +309,7 @@ void ILogAndActions::Create(bool bFastComShow, bool bLogStringShow)
         m_nIconHeight = pA->GetAttributeAsDword("height", 64);
         m_nIconLeft = pA->GetAttributeAsDword("left", 0);
         m_nIconUp = pA->GetAttributeAsDword("top", 0);
+        m_nTouchLogShift = ScaleIconForTouch();
 
         m_ActionHint1.Init(rs, pA->GetAttributeClass("text1"));
         m_ActionHint2.Init(rs, pA->GetAttributeClass("text2"));
@@ -328,6 +345,9 @@ void ILogAndActions::Create(bool bFastComShow, bool bLogStringShow)
         m_nWindowLeft = pA->GetAttributeAsDword("left", -1);
         m_nWindowRight = pA->GetAttributeAsDword("right", -1);
         m_nWindowUp = pA->GetAttributeAsDword("up", 0);
+        // to the right of the larger icon
+        if (m_nWindowLeft >= 0)
+            m_nWindowLeft += m_nTouchLogShift;
         m_fontID = rs->LoadFont(to_string(pA->GetAttribute("font")));
         m_fFontScale = pA->GetAttributeAsFloat("fontscale", 1.f);
         m_dwColor = pA->GetAttributeAsDword("color", 0x00FFFFFF);
@@ -372,6 +392,7 @@ void ILogAndActions::ActionChange(bool bFastComShow, bool bLogStringShow)
         m_nIconHeight = pA->GetAttributeAsDword("height", 64);
         m_nIconLeft = pA->GetAttributeAsDword("left", 0);
         m_nIconUp = pA->GetAttributeAsDword("top", 0);
+        m_nTouchLogShift = ScaleIconForTouch();
 
         m_ActionHint1.Init(rs, pA->GetAttributeClass("text1"));
         m_ActionHint2.Init(rs, pA->GetAttributeClass("text2"));
@@ -493,15 +514,39 @@ void ILogAndActions::SetAction(const char *actionName)
         core.Trace("Action name: %s  - overup size of name");
         return;
     }
+    // Pirates of the Caribbean: the reload put aside by another action (a box on the deck after the boarding fight, which
+    // is left with "Nothing") comes back; it is pressed with ChrAction, which the touch screens have through it only
+    std::string restored;
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        const std::string previous = m_sActionName;
+        const std::string next = actionName;
+        if (next == "Nothing" && !m_sSuspendedAction.empty() && previous != "Reload")
+        {
+            restored = std::move(m_sSuspendedAction);
+            m_sSuspendedAction.clear();
+            actionName = restored.c_str();
+        }
+        else if (previous == "Reload" && next != "Reload" && next != "Nothing")
+            m_sSuspendedAction = previous;
+        else if (next == "Nothing" || next == "Reload")
+            m_sSuspendedAction.clear();
+    }
     pA = AttributesPointer->GetAttributeClass("ActiveActions");
     if (pA != nullptr)
         pA = pA->GetAttributeClass(actionName);
     if (pA == nullptr)
         return;
     strcpy_s(m_sActionName, actionName);
+    // the talk icon of Player::Update gives way to the last action of the scripts (not the one it replaced: the box left
+    // during the talk is "Nothing")
+    if (!storm::iEquals(actionName, "Talk"))
+        AttributesPointer->SetAttribute("ScriptAction", actionName);
     // set texture coordinates for this action icon
     FRECT texRect;
     const int32_t curIconNum = pA->GetAttributeAsDword("IconNum", 0);
+    // the touch screen button of the fast command shows it
+    AttributesPointer->SetAttribute("CurrentAction", curIconNum == -1 ? "" : actionName);
     if (curIconNum == -1)
     {
         m_bThatRealAction = false;

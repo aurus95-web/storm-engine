@@ -6,6 +6,7 @@
 #include <ranges>
 #include <type_traits>
 
+#include "core.h"
 #include "storm/editor/storm_imgui.hpp"
 #include "storm/layers.hpp"
 #include "string_compare.hpp"
@@ -212,7 +213,12 @@ void EntityManager::EraseAll()
     // clear cache
     cache_.Clear();
 
-    previousStamp_ = 0;
+    // Pirates of the Caribbean scripts keep the ids of the erased entities (DeleteEntities() on a new game)
+    // and recreate them only if IsEntity() fails: the new entities must not get the same ids
+    if (core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        previousStamp_ = 0;
+    }
 }
 
 entptr_t EntityManager::GetEntityPointer(const entid_t id) const

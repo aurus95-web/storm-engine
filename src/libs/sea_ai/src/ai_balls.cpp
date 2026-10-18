@@ -7,6 +7,17 @@ using storm::Sqr;
 
 AIBalls *AIBalls::pAIBalls = nullptr;
 
+namespace
+{
+// the particles of the balls are deleted with the particle manager (erased before the balls: the crash when the sea was
+// left after a fight)
+bool IsParticleAlive(VPARTICLE_SYSTEM *particle)
+{
+    const auto eid = core.GetEntityId("particles");
+    return particle && eid && core.Send_Message(eid, "lp", PS_VALIDATE_PARTICLE, particle) != 0;
+}
+} // namespace
+
 AIBalls::AIBalls()
     : pSail(nullptr), pSea(nullptr), pFort(nullptr), pIsland(nullptr), fDeltaTimeMultiplier(1.0f),
       fBallFlySoundDistance(1.0f), dwFireBallFromCameraTime(0)
@@ -20,7 +31,9 @@ AIBalls::~AIBalls()
 
     pAIBalls = nullptr;
 
-    AIHelper::pRS->TextureRelease(dwTextureIndex);
+    // the renderer of the sea AI is not set if there was no sea since the start (the balls of a game loaded on land)
+    if (auto *rs = core.GetServiceX<VDX9RENDER>(); rs && dwTextureIndex != static_cast<decltype(dwTextureIndex)>(-1))
+        rs->TextureRelease(dwTextureIndex);
 
     for (i = 0; i < aBallTypes.size(); i++)
     {
@@ -30,7 +43,9 @@ AIBalls::~AIBalls()
             auto *pBall = &pBallsType->Balls[j];
             if (pBall->pParticle)
             {
-                STORM_DELETE(pBall->pParticle);
+                if (IsParticleAlive(pBall->pParticle))
+                    STORM_DELETE(pBall->pParticle);
+                pBall->pParticle = nullptr;
             }
             pBall->sBallEvent.clear();
         }
@@ -131,11 +146,12 @@ void AIBalls::AddBall(ATTRIBUTES *pABall)
     pBall->vPos = pBall->vFirstPos =
         CVECTOR(pABall->GetAttributeAsFloat("x"), pABall->GetAttributeAsFloat("y"), pABall->GetAttributeAsFloat("z"));
     pBall->fSpeedV0 = pABall->GetAttributeAsFloat("SpdV0");
-    pBall->fHeightMultiply = pABall->GetAttributeAsFloat("HeightMultiply");
-    pBall->fSizeMultiply = pABall->GetAttributeAsFloat("SizeMultiply");
-    pBall->fTimeSpeedMultiply = pABall->GetAttributeAsFloat("TimeSpeedMultiply");
+    // Pirates of the Caribbean sets no multipliers and fire distance: the ball would not fly
+    pBall->fHeightMultiply = pABall->GetAttributeAsFloat("HeightMultiply", 1.0f);
+    pBall->fSizeMultiply = pABall->GetAttributeAsFloat("SizeMultiply", 1.0f);
+    pBall->fTimeSpeedMultiply = pABall->GetAttributeAsFloat("TimeSpeedMultiply", 1.0f);
     pBall->dwCannonType = pABall->GetAttributeAsDword("CannonType");
-    pBall->fMaxFireDistance = pABall->GetAttributeAsFloat("MaxFireDistance");
+    pBall->fMaxFireDistance = pABall->GetAttributeAsFloat("MaxFireDistance", 100000.0f);
     const auto fAngle = pABall->GetAttributeAsFloat("Ang");
     pBall->fCosAngle = cosf(fAngle);
     pBall->fSinAngle = sinf(fAngle);
@@ -292,8 +308,12 @@ void AIBalls::Execute(uint32_t Delta_Time)
 
                 if (pBall->pParticle)
                 {
-                    pBall->pParticle->Stop();
-                    STORM_DELETE(pBall->pParticle);
+                    if (IsParticleAlive(pBall->pParticle))
+                    {
+                        pBall->pParticle->Stop();
+                        STORM_DELETE(pBall->pParticle);
+                    }
+                    pBall->pParticle = nullptr;
                 }
                 // pBallsType->Balls.ExtractNoShift(j);
                 pBallsType->Balls[j] = pBallsType->Balls.back();
@@ -356,8 +376,12 @@ uint32_t AIBalls::AttributeChanged(ATTRIBUTES *pAttributeChanged)
 
                 if (pBall->pParticle)
                 {
-                    pBall->pParticle->Stop();
-                    STORM_DELETE(pBall->pParticle);
+                    if (IsParticleAlive(pBall->pParticle))
+                    {
+                        pBall->pParticle->Stop();
+                        STORM_DELETE(pBall->pParticle);
+                    }
+                    pBall->pParticle = nullptr;
                 }
             }
 
@@ -427,8 +451,12 @@ uint64_t AIBalls::ProcessMessage(MESSAGE &message)
 
                 if (pBall->pParticle)
                 {
-                    pBall->pParticle->Stop();
-                    STORM_DELETE(pBall->pParticle);
+                    if (IsParticleAlive(pBall->pParticle))
+                    {
+                        pBall->pParticle->Stop();
+                        STORM_DELETE(pBall->pParticle);
+                    }
+                    pBall->pParticle = nullptr;
                 }
             }
     }

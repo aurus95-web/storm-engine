@@ -1190,6 +1190,19 @@ void SAIL::SetAllSails()
         texl = RenderService->TextureCreate("ships\\parus_hole.tga");
     if (m_nEmptyGerbTex == -1)
         m_nEmptyGerbTex = RenderService->TextureCreate("ships\\emptygerald.tga");
+    // Pirates of the Caribbean has no empty gerald: a stage without its texture ends the stages (DXVK), the holes
+    // of the next stage were not drawn; a transparent one instead
+    if (m_nEmptyGerbTex == -1)
+    {
+        m_nEmptyGerbTex = RenderService->TextureCreate(1, 1, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED);
+        auto *texture = static_cast<IDirect3DTexture9 *>(RenderService->GetBaseTexture(m_nEmptyGerbTex));
+        D3DLOCKED_RECT rect;
+        if (texture && SUCCEEDED(texture->LockRect(0, &rect, nullptr, 0)))
+        {
+            *static_cast<uint32_t *>(rect.pBits) = 0;
+            texture->UnlockRect(0);
+        }
+    }
 
     sg.vertBuf = RenderService->CreateVertexBuffer(SAILVERTEX_FORMAT, sg.nVert * sizeof(SAILVERTEX),
                                                    D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY);

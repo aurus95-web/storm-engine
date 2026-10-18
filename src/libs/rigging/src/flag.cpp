@@ -860,7 +860,13 @@ void FLAG::SetAdd(int flagNum)
             int32_t curTexNumR = 0;
 
             // set texture number
-            if (flist[fn]->isShip) // ship
+            if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+            {
+                // Pirates of the Caribbean: the column of the nation in the flag texture
+                pvdat = core.Event("GetRiggingData", "sll", "GetFlagTexNum", flist[fn]->isShip ? 1 : 0,
+                                   gdata[flist[fn]->HostGroup].nation);
+            }
+            else if (flist[fn]->isShip) // ship
             {
                 pvdat = core.Event("GetRiggingData", "sllla", "GetShipFlagTexNum", flist[fn]->triangle,
                                    gdata[flist[fn]->HostGroup].nation, flist[fn]->isSpecialFlag,

@@ -28,6 +28,7 @@
 #include "wdm_sea.h"
 #include "wdm_storm.h"
 #include "wdm_warring_ship.h"
+#include "wdm_counter.h"
 #include "wdm_wind_rose.h"
 #include "wdm_wind_ui.h"
 
@@ -256,32 +257,61 @@ bool WorldMap::Init()
     rs->ProgressView();
     // Creating interface elements
 
+    const bool isPotc = core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN;
     // Date
-    auto *windUI = new WdmWindUI();
-    windUI->SetAttributes(AttributesPointer);
-    AddLObject(AddObject(windUI, 1001), 10100);
+    if (!isPotc)
+    {
+        auto *windUI = new WdmWindUI();
+        windUI->SetAttributes(AttributesPointer);
+        AddLObject(AddObject(windUI, 1001), 10100);
+    }
 
     // Compass
-    if (showCompass_)
+    if (showCompass_ || isPotc)
     {
         ro = CreateModel(new WdmWindRose(), "WindRose");
         AddLObject(ro, 10099);
     }
-    // The calendar
-    // WdmCounter * cnt = new WdmCounter();
-    // if(!cnt->Init()) core.Trace("Counter not created");
-
-    // AddLObject(cnt, 10099);
+    // The calendar of Pirates of the Caribbean
+    if (isPotc)
+    {
+        auto *cnt = new WdmCounter();
+        if (cnt->Init())
+            AddLObject(AddObject(cnt, 1001), 10099);
+        else
+        {
+            core.Trace("Counter not created");
+            delete cnt;
+        }
+    }
     // Icon
     AddLObject(AddObject(new WdmIcon(), 1000), 10099);
 
-    // load encounters, if any
-    if (saveData)
+    // Pirates of the Caribbean does not keep the encounters between the map visits: the beaten ships came back. Only
+    // the ones of a game saved on the map are loaded: the scripts mark the open map (isLoaded) and keep the table of
+    // the encounters then (wdmLoadSavedMap); the ships gone before the save are not loaded
+    const char *isLoaded = AttributesPointer ? AttributesPointer->GetAttribute("isLoaded") : nullptr;
+    const bool savedOnMap = isLoaded && storm::iEquals(isLoaded, "true");
+    if (saveData && isPotc)
     {
-        const auto num = saveData->GetAttributesNum();
-        for (uint32_t i = 0; i < num; i++)
+        for (uint32_t i = 0; i < saveData->GetAttributesNum();)
         {
             auto *a = saveData->GetAttributeClass(i);
+            if (!savedOnMap || a->GetAttributeAsDword("killMe", 0) != 0 || a->FindAClass(a, "needDelete"))
+                saveData->DeleteAttributeClassX(a);
+            else
+                i++;
+        }
+    }
+    // load encounters, if any (by the names: the ones not loaded are deleted)
+    if (saveData)
+    {
+        std::vector<std::string> names;
+        for (uint32_t i = 0; i < saveData->GetAttributesNum(); i++)
+            names.emplace_back(saveData->GetAttributeClass(i)->GetThisName());
+        for (const auto &name : names)
+        {
+            auto *a = saveData->FindAClass(saveData, name.c_str());
             if (!a)
                 continue;
             const char *type = a->GetAttribute("type");
@@ -329,12 +359,24 @@ bool WorldMap::Init()
                             saveData->DeleteAttributeClassX(a);
                             saveData->DeleteAttributeClassX(a1);
                         }
+                        continue;
                     }
                 }
+                // the opponent is gone
+                saveData->DeleteAttributeClassX(a);
                 continue;
             }
             if (storm::iEquals(type, "Attacked"))
             {
+                // loaded with its opponent; alone it is deleted
+                auto hasOpponent = false;
+                for (uint32_t i = 0; i < saveData->GetAttributesNum() && !hasOpponent; i++)
+                {
+                    const char *attacked = saveData->GetAttributeClass(i)->GetAttribute("attacked");
+                    hasOpponent = attacked && name == attacked;
+                }
+                if (!hasOpponent)
+                    saveData->DeleteAttributeClassX(a);
                 continue;
             }
             if (storm::iEquals(type, "Storm"))
@@ -551,12 +593,71 @@ void WorldMap::Realize(uint32_t delta_time)
 }
 
 // Messages
+bool WorldMap::ProcessPotcEncounterMessage(int32_t code, MESSAGE &message, uint64_t &result)
+{
+    const auto setType = [](size_t firstShip, uint32_t type) {
+        for (auto i = firstShip; i < wdmObjects->ships.size(); i++)
+        {
+            if (wdmObjects->ships[i] != wdmObjects->playerShip)
+                static_cast<WdmEnemyShip *>(wdmObjects->ships[i])->type = type;
+        }
+    };
+    const auto firstShip = wdmObjects->ships.size();
+    switch (code)
+    {
+    case MSG_WORLDMAP_CREATEENC_MER:
+    case MSG_WORLDMAP_CREATEENC_MER_TIME: {
+        const auto type = message.Long();
+        const std::string model = message.String();
+        const std::string island = message.String();
+        const auto kSpeed = message.Float();
+        const auto time = code == MSG_WORLDMAP_CREATEENC_MER_TIME ? message.Float() : -1.0f;
+        result = CreateMerchantShip(model.c_str(), nullptr, island.c_str(), kSpeed, time);
+        setType(firstShip, type);
+        return true;
+    }
+    case MSG_WORLDMAP_CREATEENC_FLW:
+    case MSG_WORLDMAP_CREATEENC_FLW_TIME: {
+        const auto type = message.Long();
+        const std::string model = message.String();
+        const auto kSpeed = message.Float();
+        const auto time = code == MSG_WORLDMAP_CREATEENC_FLW_TIME ? message.Float() : -1.0f;
+        result = CreateFollowShip(model.c_str(), kSpeed, time);
+        setType(firstShip, type);
+        return true;
+    }
+    case MSG_WORLDMAP_CREATEENC_WAR:
+    case MSG_WORLDMAP_CREATEENC_WAR_TIME: {
+        const auto type1 = message.Long();
+        const std::string model1 = message.String();
+        const auto type2 = message.Long();
+        const std::string model2 = message.String();
+        const auto time = code == MSG_WORLDMAP_CREATEENC_WAR_TIME ? message.Float() : -1.0f;
+        result = CreateWarringShips(model1.c_str(), model2.c_str(), time);
+        setType(firstShip, type1);
+        if (firstShip + 1 < wdmObjects->ships.size() && wdmObjects->ships.back() != wdmObjects->playerShip)
+            static_cast<WdmEnemyShip *>(wdmObjects->ships.back())->type = type2;
+        return true;
+    }
+    }
+    return false;
+}
+
 uint64_t WorldMap::ProcessMessage(MESSAGE &message)
 {
-    switch (message.Long())
+    const auto code = message.Long();
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        uint64_t result = 0;
+        if (ProcessPotcEncounterMessage(code, message, result))
+            return result;
+    }
+    switch (code)
     {
     case MSG_WORLDMAP_CREATESTORM: {
-        const auto isTornado = message.Long() != 0;
+        // Pirates of the Caribbean has no tornado parameter
+        const auto isTornado = core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN &&
+                               message.Long() != 0;
         CreateStorm(isTornado);
     }
     break;
@@ -652,6 +753,39 @@ uint32_t WorldMap::AttributeChanged(ATTRIBUTES *apnt)
             AttributesPointer->SetAttributeUseFloat("playerShipX", x);
             AttributesPointer->SetAttributeUseFloat("playerShipZ", z);
             AttributesPointer->SetAttributeUseFloat("playerShipAY", ay);
+        }
+    }
+    else if (storm::iEquals(apnt->GetThisName(), "playerShipUpdateDisp") &&
+             core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        // Pirates of the Caribbean: back from the sea the ship is moved by its sea displacement (playerShipDispX/Z,
+        // already in the map scale) from the approach point (position.rx/rz) of the island it left the map at,
+        // or from where it left the map in the open sea
+        if (wdmObjects->playerShip)
+        {
+            wdmObjects->playerShip->GetPosition(x, z, ay);
+            auto baseX = x, baseZ = z;
+            auto *const pIslands = AttributesPointer->GetAttributeClass("islands");
+            for (size_t i = 0; pIslands && i < pIslands->GetAttributesNum(); i++)
+            {
+                auto *const pIsland = pIslands->GetAttributeClass(i);
+                auto *const pPos = pIsland ? pIsland->GetAttributeClass("position") : nullptr;
+                if (!pPos)
+                    continue;
+                const auto dx = x - pPos->GetAttributeAsFloat("x", 0.0f);
+                const auto dz = z - pPos->GetAttributeAsFloat("z", 0.0f);
+                const auto radius = pIsland->GetAttributeAsFloat("radius", 100.0f);
+                if (dx * dx + dz * dz <= radius * radius)
+                {
+                    baseX = pPos->GetAttributeAsFloat("rx", baseX);
+                    baseZ = pPos->GetAttributeAsFloat("rz", baseZ);
+                    break;
+                }
+            }
+            x = baseX + AttributesPointer->GetAttributeAsFloat("playerShipDispX", 0.0f);
+            z = baseZ + AttributesPointer->GetAttributeAsFloat("playerShipDispZ", 0.0f);
+            wdmObjects->playerShip->Teleport(x, z, AttributesPointer->GetAttributeAsFloat("playerShipAY", ay));
+            static_cast<WdmPlayerShip *>(wdmObjects->playerShip)->PushOutFromIsland();
         }
     }
     else if (storm::iEquals(apnt->GetThisName(), "cur"))

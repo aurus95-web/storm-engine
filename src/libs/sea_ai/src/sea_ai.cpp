@@ -15,6 +15,8 @@ SEA_AI::SEA_AI()
 
 SEA_AI::~SEA_AI()
 {
+    if (shipLights_ != invalid_entity)
+        core.EraseEntity(shipLights_);
     for (auto &i : AIGroup::AIGroups)
         STORM_DELETE(i);
     AIGroup::AIGroups.clear();
@@ -25,7 +27,69 @@ SEA_AI::~SEA_AI()
 bool SEA_AI::Init()
 {
     Helper.SetDevice();
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN &&
+        !core.GetEntityId("shiplights"))
+        CreatePotcShipLights();
     return true;
+}
+
+// the parameters are the ones of the ShipLights.c of the later versions
+void SEA_AI::CreatePotcShipLights()
+{
+    if (!AttributesPointer)
+        return;
+    auto *pA = AttributesPointer->CreateSubAClass(AttributesPointer, "ShipLights");
+    const auto set = [pA](const char *path, const char *value) {
+        pA->CreateSubAClass(pA, path)->SetValue(value);
+    };
+    set("MaxD3DLights", "7");
+    set("CoronaTextureX", "1");
+    set("CoronaTextureY", "1");
+    set("CoronaTexture", "ShipsFlares\\corona.tga");
+    set("FlareSunRoadTexture", "ShipsFlares\\FlareSunRoad.tga");
+    set("CoronaTechnique", "coronas");
+    set("SunRoadFlareSize", "4.0");
+    for (const char *type : {"default", "flare"})
+    {
+        const std::string base = std::string("LightTypes.") + type + ".";
+        const bool isFlare = std::string_view(type) == "flare";
+        for (const auto &[name, value] : std::initializer_list<std::pair<const char *, const char *>>{
+                 {"light.r", isFlare ? "1.2" : "1.0"},
+                 {"light.g", isFlare ? "1.0" : "0.9"},
+                 {"light.b", isFlare ? "2.2" : "0.0"},
+                 {"light.range", "15.0"},
+                 {"light.Attenuation0", "0.0"},
+                 {"light.Attenuation1", "0.3"},
+                 {"light.Attenuation2", "0.0"},
+                 {"Oscillator1.Flicker", "0.15"},
+                 {"Oscillator1.Freq", "5.0"},
+                 {"Oscillator2.Flicker", "0.1"},
+                 {"Oscillator2.Freq", "1.0"},
+                 {"corona.r", "1.0"},
+                 {"corona.g", "1.0"},
+                 {"corona.b", "1.0"},
+                 {"corona.subtexture", "0"},
+                 {"corona.Range", "5.0"},
+                 {"corona.Size", "1.0"},
+                 {"SunRoadFlareFadeDistance", "600.0"}})
+            set((base + name).c_str(), value);
+    }
+    for (const auto &[name, value] : std::initializer_list<std::pair<const char *, const char *>>{
+             {"light.r", "2.0"},
+             {"light.g", "2.0"},
+             {"light.b", "2.0"},
+             {"light.range", "20.0"},
+             {"light.Attenuation0", "0.0"},
+             {"light.Attenuation1", "0.3"},
+             {"light.Attenuation2", "0.0"},
+             {"LifeTime", "0.2"},
+             {"UpTime", "0.1"}})
+        set((std::string("LightTypes.cannondefault.") + name).c_str(), value);
+
+    shipLights_ = core.CreateEntity("ShipLights", pA);
+    core.AddToLayer(SEA_EXECUTE, shipLights_, 0);
+    core.AddToLayer(SEA_REALIZE, shipLights_, -1);
+    core.AddToLayer(SEA_SUNROAD, shipLights_, -1);
 }
 
 void SEA_AI::SetDevice()
@@ -275,7 +339,8 @@ uint64_t SEA_AI::ProcessMessage(MESSAGE &message)
         x = message.Float();
         y = message.Float();
         z = message.Float();
-        ay = message.Float();
+        // Pirates of the Caribbean passes no angle: the ships keep their direction
+        ay = message.GetCurrentFormatType() ? message.Float() : -20000.0f;
 
         AIGroup::SailMainGroup(CVECTOR(x, y, z), ay, nullptr);
     }
@@ -305,7 +370,11 @@ uint64_t SEA_AI::ProcessMessage(MESSAGE &message)
         auto *pACharacter1 = message.AttributePointer();
         auto *pACharacter2 = message.AttributePointer();
         auto *pVData = message.ScriptVariablePointer();
-        pVData->Set(static_cast<int32_t>(Helper.GetRelationSafe(pACharacter1, pACharacter2)));
+        auto relation = static_cast<int32_t>(Helper.GetRelationSafe(pACharacter1, pACharacter2));
+        // Pirates of the Caribbean: friend 0, neutral 1, enemy 2 (later: 1, 2, 3)
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+            relation--;
+        pVData->Set(relation);
     }
     break;
     case AI_MESSAGE_SET_COMPANION_ENEMY: {

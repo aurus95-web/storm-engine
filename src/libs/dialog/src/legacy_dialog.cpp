@@ -2,6 +2,7 @@
 
 #include "dialog.hpp"
 #include "storm/config/config.hpp"
+#include "storm/port_options.hpp"
 #include <dialog/dialog_utils.hpp>
 
 #include <animation.h>
@@ -28,6 +29,46 @@ constexpr const uint32_t COLOR_NORMAL = 0xFFFFFFFF;
 constexpr const uint32_t COLOR_LINK_UNSELECTED = ARGB(255, 127, 127, 127);
 
 constexpr const uint32_t UNFADE_TIME = 1000;
+
+// Converts UTF-8 text to upper case: ASCII, Latin-1 and Cyrillic letters (names in the translations)
+void ToUpperUtf8(std::string &text)
+{
+    for (size_t i = 0; i < text.size(); i++)
+    {
+        auto &c0 = reinterpret_cast<unsigned char &>(text[i]);
+        if (c0 < 0x80)
+        {
+            c0 = static_cast<unsigned char>(std::toupper(c0));
+            continue;
+        }
+        const size_t length = c0 >= 0xF0 ? 4 : c0 >= 0xE0 ? 3 : 2;
+        if (length != 2 || i + 1 == text.size())
+        {
+            i += length - 1;
+            continue;
+        }
+        auto &c1 = reinterpret_cast<unsigned char &>(text[i + 1]);
+        if (c0 == 0xC3 && c1 >= 0xA0 && c1 <= 0xBE && c1 != 0xB7) // à..þ except ÷
+        {
+            c1 -= 0x20;
+        }
+        else if (c0 == 0xD0 && c1 >= 0xB0 && c1 <= 0xBF) // а..п
+        {
+            c1 -= 0x20;
+        }
+        else if (c0 == 0xD1 && c1 >= 0x80 && c1 <= 0x8F) // р..я
+        {
+            c0 = 0xD0;
+            c1 += 0x20;
+        }
+        else if (c0 == 0xD1 && c1 == 0x91) // ё
+        {
+            c0 = 0xD0;
+            c1 = 0x81;
+        }
+        i++;
+    }
+}
 
 void FillIndexBuffer(VDX9RENDER &renderService, int32_t indexBuffer, size_t spriteCount)
 {
@@ -202,6 +243,11 @@ void LegacyDialog::Realize(uint32_t deltaTime)
             SetAction("dialog_all");
             soundState_ = SOUND_PLAYING;
         }
+        else
+        {
+            // the sound is missing, do not retry it every frame
+            soundState_ = SOUND_STOPPED;
+        }
     }
 
     UpdateScreenSize();
@@ -300,7 +346,7 @@ uint64_t LegacyDialog::ProcessMessage(MESSAGE &msg)
         const std::string_view name = name_attr ? name_attr : "";
         const std::string_view last_name = last_name_attr ? last_name_attr : "";
         characterName_ = fmt::format("{} {}", name, last_name);
-        std::transform(characterName_.begin(), characterName_.end(), characterName_.begin(), ::toupper);
+        ToUpperUtf8(characterName_);
         break;
     }
     }
@@ -350,6 +396,12 @@ void LegacyDialog::UpdateScreenSize()
 
     const float oldFontScale = fontScale_;
     fontScale_ = static_cast<float>(viewport.Height) / 600.f;
+#ifdef __APPLE__
+    // the text of the dialogs in percent (engine.ini [touch] dialog_text_scale): larger on the small screens of the
+    // phones (wider than 16:9), where it is hard to read
+    const auto phone = viewport.Width > viewport.Height * 16 / 9;
+    fontScale_ *= storm::GetPortOption("dialog_text_scale", phone ? 150 : 100) * 0.01f;
+#endif
     if (fabs(fontScale_ - oldFontScale) > 1e-3f)
     {
         lineHeight_ = static_cast<int32_t>(static_cast<float>(RenderService->CharHeight(mainFont_)) * fontScale_);
@@ -700,6 +752,27 @@ void LegacyDialog::ProcessControls()
     bool bDoUp = false;
     bool bDoDown = false;
     bool bDoAction = false;
+
+    // touch screens: a tap selects an answer, a tap on the selected one says it
+    if (float pointerX, pointerY; core.Controls->GetPointerPosition(pointerX, pointerY))
+    {
+        core.Controls->GetControlState("ILClick", cs);
+        if (cs.state == CST_ACTIVATED)
+        {
+            D3DVIEWPORT9 vp;
+            RenderService->GetViewport(&vp);
+            const auto link = linkDescribe_.GetLinkAt(static_cast<int32_t>(pointerY * vp.Height));
+            if (link >= 0 && link == linkDescribe_.GetSelectedLine())
+            {
+                bDoAction = true;
+            }
+            else if (link >= 0)
+            {
+                PlayTick();
+                linkDescribe_.Select(link);
+            }
+        }
+    }
 
     core.Controls->GetControlState("DlgUp", cs);
     if (cs.state == CST_ACTIVATED)

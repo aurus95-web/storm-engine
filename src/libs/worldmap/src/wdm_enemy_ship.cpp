@@ -121,6 +121,10 @@ void WdmEnemyShip::Update(float dltTime)
                 deleteAlpha = 0;
                 if (!pVDat || pVDat->GetInt() != 0)
                 {
+                    // Pirates of the Caribbean frees the slot of the encounter (16 of them) by this event: without it
+                    // no new ships came after a while on the map
+                    if (!killMe && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+                        core.Event("WorldMap_DeleteShipEncounter", "l", type);
                     killMe = true;
                 }
                 else

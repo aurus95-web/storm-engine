@@ -26,7 +26,9 @@ void BIManCommandList::FillIcons()
     if (m_nCurrentCommandMode & BI_COMMODE_ABILITY_ICONS)
         nIconsQuantity += AbilityAdding();
 
-    nIconsQuantity += AddCancelIcon();
+    // on touch screens the commands are always shown, there is nothing to cancel at their top level
+    if (!m_bTouchMode || m_nCurrentCommandMode != BI_COMMODE_COMMAND_SELECT)
+        nIconsQuantity += AddCancelIcon();
 
     /*if( nIconsQuantity == 0 )
       AddCancelIcon();*/

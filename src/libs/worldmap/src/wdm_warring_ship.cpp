@@ -9,6 +9,7 @@
 //============================================================================================
 
 #include "wdm_warring_ship.h"
+#include "core.h"
 #include "storm_assert.h"
 
 // ============================================================================================
@@ -26,6 +27,9 @@ WdmWarringShip::WdmWarringShip()
 
 WdmWarringShip::~WdmWarringShip()
 {
+    // the opponent stays alone (the pair loaded from a saved game is deleted one by one)
+    if (attack && attack->attack == this)
+        attack->attack = nullptr;
     if (texture >= 0)
         wdmObjects->rs->TextureRelease(texture);
 }
@@ -39,8 +43,13 @@ void WdmWarringShip::Update(float dltTime)
     {
         if (!isLive)
             attack->isLive = false;
-        if (killMe)
+        if (killMe && !attack->killMe)
+        {
+            // Pirates of the Caribbean: the slot of the opponent's encounter is freed too (WdmEnemyShip::Update)
+            if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+                core.Event("WorldMap_DeleteShipEncounter", "l", attack->type);
             attack->killMe = true;
+        }
     }
     // Smoke
     // spawn if necessary

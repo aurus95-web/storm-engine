@@ -9,6 +9,7 @@
 //============================================================================================
 
 #include "wdm_icon.h"
+#include "core.h"
 #include "wdm_enemy_ship.h"
 
 // ============================================================================================
@@ -112,7 +113,9 @@ void WdmIcon::Update(float dltTime)
 // Rendering
 void WdmIcon::LRender(VDX9RENDER *rs)
 {
-    return; //~!~
+    // the icons of Pirates of the Caribbean: event, island, skip, storm
+    if (core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        return; //~!~
     Vertex vrt[6];
     rs->TextureSet(0, texture);
     float w, h;

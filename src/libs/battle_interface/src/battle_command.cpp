@@ -94,8 +94,28 @@ void BICommandList::Update(int32_t nTopLine, int32_t nCharacterIndex, int32_t nC
     UpdateShowIcon();
 }
 
+// Pirates of the Caribbean: the selected pictures are to the right of the nCols x nRows grid of square pictures
+// (the flags texture has no selected pictures)
+bool BICommandList::HasPotcSelectedPictures(const char *pcTextureName, uint32_t nCols, uint32_t nRows) const
+{
+    if (core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        return false;
+    auto result = true;
+    const auto id = m_pRS->TextureCreate(pcTextureName);
+    auto *texture = id >= 0 ? m_pRS->GetBaseTexture(id) : nullptr;
+    D3DSURFACE_DESC desc;
+    if (texture && texture->GetType() == D3DRTYPE_TEXTURE &&
+        SUCCEEDED(static_cast<IDirect3DTexture9 *>(texture)->GetLevelDesc(0, &desc)))
+        result = desc.Width * nRows >= 2 * desc.Height * nCols;
+    if (id >= 0)
+        m_pRS->TextureRelease(id);
+    return result;
+}
+
 size_t BICommandList::AddTexture(const char *pcTextureName, uint32_t nCols, uint32_t nRows)
 {
+    if (HasPotcSelectedPictures(pcTextureName, nCols, nRows))
+        nCols *= 2;
     m_aTexture.push_back(TextureDescr{pcTextureName, nCols, nRows});
     return m_aTexture.size() - 1;
 }
@@ -188,7 +208,7 @@ void BICommandList::SetActive(bool bActive)
 {
     if (m_pARoot)
     {
-        m_pARoot->SetAttributeUseDword("ComState", (bActive ? 1 : 0));
+        m_pARoot->SetAttributeUseDword("ComState", (bActive && !m_bTouchMode ? 1 : 0));
     }
 
     if (m_bActive == bActive)
@@ -260,6 +280,8 @@ void BICommandList::Init()
         m_LeftTopPoint.x = pAList->GetAttributeAsDword("CommandIconLeft", 100);
         m_IconSize.x = pAList->GetAttributeAsDword("CommandIconWidth", m_IconSize.x);
         m_IconSize.y = pAList->GetAttributeAsDword("CommandIconHeight", m_IconSize.y);
+        if (const char *texture = pAList->GetAttribute("ShipStateTexture"))
+            m_sStateTexture = texture;
 
         const char *attr = nullptr;
 
@@ -333,12 +355,16 @@ void BICommandList::Init()
                     td.nCols = 1;
                 if (td.nRows < 1)
                     td.nRows = 1;
+                if (HasPotcSelectedPictures(td.sFileName.c_str(), td.nCols, td.nRows))
+                    td.nCols *= 2;
 
                 m_pImgRender->CreateMaterial(td.sFileName.c_str());
 
                 m_aTexture.push_back(td);
             }
         }
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+            m_nPotcDefaultTexture = static_cast<int32_t>(pAList->GetAttributeAsDword("CommandTexNum", 0));
     }
     m_nIconShowMaxQuantity = 5;
 }
@@ -359,6 +385,18 @@ int32_t BICommandList::AddToIconList(int32_t nTextureNum, int32_t nNormPictureNu
             return 0;
         if (nTargetIndex != -1 && m_aUsedCommand[n].nTargetIndex == nTargetIndex)
             return 0;
+    }
+
+    if (m_nPotcDefaultTexture >= 0)
+    {
+        if (nTextureNum < 0)
+            nTextureNum = m_nPotcDefaultTexture;
+        if (nTextureNum < m_aTexture.size() && nNormPictureNum >= 0)
+        {
+            const int32_t nCols = std::max(1, static_cast<int32_t>(m_aTexture[nTextureNum].nCols) / 2);
+            nNormPictureNum = nNormPictureNum / nCols * nCols * 2 + nNormPictureNum % nCols;
+            nSelPictureNum = nNormPictureNum + nCols;
+        }
     }
 
     UsedCommand uc;
@@ -404,6 +442,47 @@ void BICommandList::AddAdditiveToIconList(int32_t nTextureNum, int32_t nPictureN
     icon.nTex = nTextureNum;
 
     m_aUsedCommand[m_aUsedCommand.size() - 1].aAddPicList.push_back(icon);
+}
+
+void BICommandList::SetStateToIcon(float fSails, float fCrew, float fHull)
+{
+    if (m_aUsedCommand.empty() || m_sStateTexture.empty())
+        return;
+    auto &state = m_aUsedCommand.back().fState;
+    state[0] = std::clamp(fSails, 0.f, 1.f);
+    state[1] = std::clamp(fCrew, 0.f, 1.f);
+    state[2] = std::clamp(fHull, 0.f, 1.f);
+}
+
+float BICommandList::GetStateBarHeight() const
+{
+    // as thin as the bars above the icons of the own ships
+    return std::round(static_cast<float>(m_IconSize.y) * (m_bTouchMode ? .15f : .25f));
+}
+
+float BICommandList::GetIconStateHeight() const
+{
+    return !m_aUsedCommand.empty() && m_aUsedCommand.back().fState[0] >= 0.f ? 3.f * GetStateBarHeight() : 0.f;
+}
+
+void BICommandList::StateBarsAdd(const RECT &rIcon, const float (&fState)[3])
+{
+    // from the top: the sails (white), the crew (blue), the hull (red) of indicators.tga on the dark tracks
+    static const float kRows[3] = {0.f, .167f, .333f};
+    const auto height = static_cast<int32_t>(GetStateBarHeight());
+    for (int32_t i = 0; i < 3; i++)
+    {
+        RECT r = rIcon;
+        r.top = rIcon.top - (3 - i) * height;
+        r.bottom = r.top + height;
+        FRECT uv = {0.f, .5f, 1.f, .667f};
+        m_pImgRender->CreateImage(BIType_square, m_sStateTexture.c_str(), 0xFF808080, uv, r);
+        r.right = r.left + static_cast<int32_t>((rIcon.right - rIcon.left) * fState[i]);
+        if (r.right <= r.left)
+            continue;
+        uv = {0.f, kRows[i], fState[i], kRows[i] + .167f};
+        m_pImgRender->CreateImage(BIType_square, m_sStateTexture.c_str(), 0xFF808080, uv, r);
+    }
 }
 
 void BICommandList::Release()
@@ -495,6 +574,7 @@ void BICommandList::UpdateShowIcon()
     RECT rPos;
 
     m_pImgRender->ReleaseAllImages();
+    m_aTouchRects.clear();
 
     if (!m_bActive)
     {
@@ -520,6 +600,8 @@ void BICommandList::UpdateShowIcon()
     {
         GetCurrentPos(i, rPos);
         AdditiveIconAdd(.5f * (rPos.left + rPos.right), static_cast<float>(rPos.bottom), m_aUsedCommand[n].aAddPicList);
+        if (m_aUsedCommand[n].fState[0] >= 0.f)
+            StateBarsAdd(rPos, m_aUsedCommand[n].fState);
         if (n == m_nSelectedCommandIndex)
         {
             if (m_aUsedCommand[n].nCooldownPictureIndex < 0)
@@ -527,6 +609,7 @@ void BICommandList::UpdateShowIcon()
             else
                 i += ClockIconAdd(m_aUsedCommand[n].nSelPictureIndex, m_aUsedCommand[n].nCooldownPictureIndex,
                                   m_aUsedCommand[n].nTextureIndex, rPos, m_aUsedCommand[n].fCooldownFactor);
+            m_aTouchRects.emplace_back(static_cast<int32_t>(n), rPos);
             SetNote(m_aUsedCommand[n].sNote.c_str(), (rPos.left + rPos.right) / 2, (rPos.top + rPos.bottom) / 2);
             auto *const pSD = g_ShipList.FindShip(m_aUsedCommand[n].nCharIndex);
             if (pSD)
@@ -543,6 +626,7 @@ void BICommandList::UpdateShowIcon()
             else
                 i += ClockIconAdd(m_aUsedCommand[n].nNormPictureIndex, m_aUsedCommand[n].nCooldownPictureIndex,
                                   m_aUsedCommand[n].nTextureIndex, rPos, m_aUsedCommand[n].fCooldownFactor);
+            m_aTouchRects.emplace_back(static_cast<int32_t>(n), rPos);
         }
     }
 
@@ -570,6 +654,7 @@ void BICommandList::UpdateShowIcon()
         rPos.right = rPos.left + m_pntLeftRightArrowSize.x;
         rPos.bottom = rPos.top + m_pntLeftRightArrowSize.y;
         m_pImgRender->CreateImage(BIType_square, m_sLeftRightArrowTexture.c_str(), 0xFF808080, m_frLeftArrowUV, rPos);
+        m_aTouchRects.emplace_back(kTouchLeftArrow, rPos);
     }
     if (m_bRightArrow)
     {
@@ -578,7 +663,40 @@ void BICommandList::UpdateShowIcon()
         rPos.right = rPos.left + m_pntLeftRightArrowSize.x;
         rPos.bottom = rPos.top + m_pntLeftRightArrowSize.y;
         m_pImgRender->CreateImage(BIType_square, m_sLeftRightArrowTexture.c_str(), 0xFF808080, m_frRightArrowUV, rPos);
+        m_aTouchRects.emplace_back(kTouchRightArrow, rPos);
     }
+}
+
+int32_t BICommandList::GetCommandAt(int32_t x, int32_t y) const
+{
+    for (const auto &[n, r] : m_aTouchRects)
+    {
+        if (x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+            return n;
+    }
+    return -1;
+}
+
+void BICommandList::AddTouchPointerAreas() const
+{
+    D3DVIEWPORT9 vp;
+    m_pRS->GetViewport(&vp);
+    if (vp.Width == 0 || vp.Height == 0)
+        return;
+    for (const auto &[n, r] : m_aTouchRects)
+    {
+        core.Controls->AddTouchPointerArea(static_cast<float>(r.left) / vp.Width, static_cast<float>(r.top) / vp.Height,
+                                           static_cast<float>(r.right) / vp.Width,
+                                           static_cast<float>(r.bottom) / vp.Height);
+    }
+}
+
+void BICommandList::SelectCommand(int32_t n)
+{
+    if (n < 0 || n >= static_cast<int32_t>(m_aUsedCommand.size()) || n == m_nSelectedCommandIndex)
+        return;
+    m_nSelectedCommandIndex = n;
+    UpdateShowIcon();
 }
 
 void BICommandList::SetNote(const char *pcNote, int32_t nX, int32_t nY)

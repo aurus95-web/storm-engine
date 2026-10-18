@@ -125,6 +125,15 @@ void AIShipTaskController::FindRunAwayPoint()
         // If 1 is returned from the script, then use the script point
         auto *pV = core.Event(SHIP_GET_RUNAWAY_POINT, "aff", GetAIShip()->GetACharacter(), vRAPoint.x, vRAPoint.z);
         auto *pARAP = GetAIShip()->GetACharacter()->FindAClass(GetAIShip()->GetACharacter(), "SeaAI.RunAwayPnt");
+        if (!pARAP)
+        {
+            // no point from the scripts (Pirates of the Caribbean has no such event): away with the wind
+            auto fWindAngle = -PI;
+            if (auto *pAWind = GetAIShip()->GetACharacter()->FindAClass(GetAIShip()->GetACharacter(), "SeaAI.WindAngle"))
+                fWindAngle = pAWind->GetAttributeAsFloat();
+            SetDestinationPoint(GetAIShip()->GetPos() + 10000.0f * CVECTOR(cosf(fWindAngle), 0.0f, sinf(fWindAngle)));
+            return;
+        }
         vRAPoint.y = 0.0f;
         vRAPoint.x = pARAP->GetAttributeAsFloat("x", 0.0f);
         vRAPoint.z = pARAP->GetAttributeAsFloat("z", 0.0f);

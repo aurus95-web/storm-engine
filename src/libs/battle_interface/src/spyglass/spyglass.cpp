@@ -31,7 +31,7 @@ void ISPYGLASS::ImageParam::LoadFromAttr(BIImageRender *pImgRender, ATTRIBUTES *
     rPos.bottom = nDefBottomPos;
     BIUtils::ReadRectFromAttr(pA, "pos", rPos, rPos);
     pImage = static_cast<BIImage *>(
-        pImgRender->CreateImage(BIType_square, sTextureName.c_str(), dwColor, rUV, rPos, nPrior));
+        pImgRender->CreateImage(BIType_square, sTextureName.c_str(), dwColor, rUV, rPos, nPrior, pcTechnique));
     Assert(pImage);
 }
 
@@ -48,7 +48,7 @@ void ISPYGLASS::ImageParam::ChangeIcon(BIImageRender *pImgRender, const char *pc
         STORM_DELETE(pImage);
         sTextureName = pcTextureName;
         pImage = static_cast<BIImage *>(
-            pImgRender->CreateImage(BIType_square, sTextureName.c_str(), dwColor, rUV, rPos, nPrior));
+            pImgRender->CreateImage(BIType_square, sTextureName.c_str(), dwColor, rUV, rPos, nPrior, pcTechnique));
     }
 }
 
@@ -98,6 +98,26 @@ bool ISPYGLASS::Init()
 
     m_pImgRender = new BIImageRender(rs);
     Assert(m_pImgRender);
+
+    if (m_PotcMode == PotcMode::none && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN &&
+        GetAttr("parameters"))
+        m_PotcMode = PotcMode::panel;
+    if (m_PotcMode == PotcMode::panel)
+    {
+        InitPotcPanel();
+        return true;
+    }
+    if (m_PotcMode == PotcMode::telescope)
+    {
+        // the lens over the whole screen, its texture is set by MSG_TELESCOPE_SET_TYPE
+        const auto screen = rs->GetScreenSize();
+        // the lens textures have no alpha: black around, white in the middle, they multiply the picture
+        m_Lens.pcTechnique = "battle_shadow_Rectangle";
+        m_Lens.LoadFromAttr(m_pImgRender, nullptr, "telescope.tga", 0, 0, screen.x, screen.y, 8000);
+        CVECTOR pos, ang;
+        rs->GetCamera(pos, ang, m_Camera.fOldPerspective);
+        return true;
+    }
 
     m_Lens.LoadFromAttr(m_pImgRender, GetAttr("lens"), "battle_interface\\spyglass\\eye_badTub.tga", 0, 0, 1024, 768,
                         8000);
@@ -164,13 +184,34 @@ bool ISPYGLASS::Init()
 
 void ISPYGLASS::Execute(uint32_t delta_time)
 {
+    if (m_PotcMode == PotcMode::panel)
+    {
+        // fading in and out
+        const auto fStep = m_Potc.fFadeTime > 0.f ? 0.001f * delta_time / m_Potc.fFadeTime : 1.f;
+        const auto fAlpha = m_Potc.bVisible ? std::min(m_Potc.fAlpha + fStep, 1.f) : std::max(m_Potc.fAlpha - fStep, 0.f);
+        if (fAlpha != m_Potc.fAlpha)
+            SetPotcPanelAlpha(fAlpha);
+        return;
+    }
+
     CONTROL_STATE cs;
     core.Controls->GetControlState("TelescopeIn", cs);
     if (cs.state == CST_ACTIVATED)
-        core.Event("MSG_TELESCOPE_REQUEST", "l", 1);
+    {
+        // Pirates of the Caribbean: the telescope is on while the key is held (on the deck only)
+        if (m_PotcMode == PotcMode::telescope)
+            TurnOnTelescope(true);
+        else
+            core.Event("MSG_TELESCOPE_REQUEST", "l", 1);
+    }
     core.Controls->GetControlState("TelescopeOut", cs);
     if (cs.state == CST_ACTIVATED)
-        core.Event("MSG_TELESCOPE_REQUEST", "l", 0);
+    {
+        if (m_PotcMode == PotcMode::telescope)
+            TurnOnTelescope(false);
+        else
+            core.Event("MSG_TELESCOPE_REQUEST", "l", 0);
+    }
 
     if (m_bIsOn)
     {
@@ -194,9 +235,30 @@ void ISPYGLASS::Execute(uint32_t delta_time)
 
 void ISPYGLASS::Realize(uint32_t delta_time) const
 {
+    if (m_PotcMode == PotcMode::panel)
+    {
+        if (m_Potc.fAlpha <= 0.f)
+            return;
+        if (m_pImgRender)
+            m_pImgRender->Render();
+        const auto dwColor = (static_cast<uint32_t>(m_Potc.fAlpha * 255.f) << 24) | 0xFFFFFF;
+        const auto print = [this, dwColor](int32_t nFont, float fScale, int32_t x, int32_t y, const std::string &text) {
+            if (nFont >= 0 && !text.empty())
+                rs->ExtPrint(nFont, dwColor, 0, PR_ALIGN_LEFT, true, fScale, 0, 0, x, y, "%s", text.c_str());
+        };
+        print(m_Potc.nTextFont, m_Potc.fTextScale, m_Potc.nTextLeft, m_Potc.nNameTop, m_Potc.sName);
+        print(m_Potc.nTextFont, m_Potc.fTextScale, m_Potc.nTextLeft, m_Potc.nTypeTop, m_Potc.sType);
+        print(m_Potc.nDigitFont, m_Potc.fDigitScale, m_Potc.nHullLeft, m_Potc.nDigitTop, m_Potc.sHull);
+        print(m_Potc.nDigitFont, m_Potc.fDigitScale, m_Potc.nSailLeft, m_Potc.nDigitTop, m_Potc.sSail);
+        print(m_Potc.nDigitFont, m_Potc.fDigitScale, m_Potc.nCrewLeft, m_Potc.nDigitTop, m_Potc.sCrew);
+        print(m_Potc.nDigitFont, m_Potc.fDigitScale, m_Potc.nSpeedLeft, m_Potc.nDigitTop, m_Potc.sSpeed);
+        print(m_Potc.nDigitFont, m_Potc.fDigitScale, m_Potc.nCannonsLeft, m_Potc.nDigitTop, m_Potc.sCannons);
+        return;
+    }
     if (m_bIsOn)
     {
-        rs->MakePostProcess();
+        if (m_PotcMode == PotcMode::none)
+            rs->MakePostProcess();
         if (m_pImgRender)
             m_pImgRender->Render();
 
@@ -226,15 +288,28 @@ uint64_t ISPYGLASS::ProcessMessage(MESSAGE &message)
     switch (nMsgCode)
     {
     case MSG_TELESCOPE_REQUEST: {
+        // Pirates of the Caribbean switches it without a parameter
+        if (m_PotcMode == PotcMode::telescope)
+        {
+            TurnOnTelescope(!m_bIsOn);
+            break;
+        }
         auto nIsOn = message.Long();
         TurnOnTelescope(nIsOn != 0);
     }
     break;
 
-    case MSG_TELESCOPE_SET_TYPE: // "lsfll"
+    case MSG_TELESCOPE_SET_TYPE: // "lsfll", Pirates of the Caribbean: "lsflll" (texture, zoom, shown info, times)
     {
         const std::string &param = message.String();
         auto fZoomScale = message.Float();
+        if (m_PotcMode == PotcMode::telescope)
+        {
+            message.Long();
+            FRECT frUV;
+            FULLRECT(frUV);
+            m_Lens.ChangeIcon(m_pImgRender, param.c_str(), frUV);
+        }
         auto fActivateTime = message.Long() * .001f;
         auto fUpdateTime = message.Long() * .001f;
         ChangeTelescopeType(param.c_str(), fZoomScale, fActivateTime, fUpdateTime);
@@ -242,8 +317,28 @@ uint64_t ISPYGLASS::ProcessMessage(MESSAGE &message)
     }
     break;
 
+    case MSG_ISG_VISIBLE: // "l"
+        m_Potc.bVisible = message.Long() != 0;
+        break;
+
     case MSG_ISG_UPDATE: // "lsslllfflllllllllllss"
     {
+        // Pirates of the Caribbean: "lsslllflll" (name, type, hull, sail, crew, speed, cannons, charge, nation)
+        if (m_PotcMode == PotcMode::panel)
+        {
+            const std::string shipname = message.String();
+            const std::string shiptype = message.String();
+            const auto nHull = message.Long();
+            const auto nSail = message.Long();
+            const auto nCrew = message.Long();
+            const auto fSpeed = message.Float();
+            const auto nCannons = message.Long();
+            const auto nCharge = message.Long();
+            const auto nNation = message.Long();
+            UpdatePotcPanel(shipname.c_str(), shiptype.c_str(), nHull, nSail, nCrew, fSpeed, nCannons, nCharge,
+                            nNation);
+            break;
+        }
         const std::string &shipname = message.String();
         const std::string &shiptype = message.String();
         auto fRelativeHP = message.Long() * .01f;
@@ -302,6 +397,7 @@ uint64_t ISPYGLASS::ProcessMessage(MESSAGE &message)
 void ISPYGLASS::Release()
 {
     TurnOnTelescope(false);
+    ReleasePotcPanel();
 
     m_Lens.Release();
     m_ShipImage.Release();
@@ -371,6 +467,8 @@ void ISPYGLASS::TurnOnTelescope(bool bTurnOn)
 
         core.Event(TELESCOPE_ACTIVE, "l", 0);
         core.Event("BI_VISIBLE", "l", 1);
+        if (m_PotcMode == PotcMode::telescope)
+            core.Event("ReleaseTelescopeInfo");
     }
 }
 
@@ -382,6 +480,16 @@ void ISPYGLASS::SetShipInfo(int32_t nCharIndex)
         m_bIsPresentShipInfo = false;
     else
         m_bIsPresentShipInfo = true;
+
+    // Pirates of the Caribbean: the scripts fill the panel (another object)
+    if (m_PotcMode == PotcMode::telescope)
+    {
+        if (m_bIsPresentShipInfo)
+            core.Event("SetTelescopeInfo", "l", m_nInfoCharacterIndex);
+        else
+            core.Event("ReleaseTelescopeInfo");
+        return;
+    }
 
     core.Event("SetTelescopeInfo", "l", m_nInfoCharacterIndex);
 
@@ -811,4 +919,143 @@ VAI_OBJBASE *ISPYGLASS::GetFort()
         m_pFortObj = static_cast<VAI_OBJBASE *>(core.GetEntityPointer(core.GetEntityId("AIFORT")));
     }
     return m_pFortObj;
+}
+
+void ISPYGLASS::InitPotcPanel()
+{
+    auto *const pA = GetAttr("parameters");
+    m_Potc.fFadeTime = BIUtils::GetFloatFromAttr(pA, "FadeTime", m_Potc.fFadeTime);
+    const auto readUV = [](ATTRIBUTES *pUV) {
+        FRECT uv;
+        uv.left = pUV ? pUV->GetAttributeAsFloat("left", 0.f) : 0.f;
+        uv.top = pUV ? pUV->GetAttributeAsFloat("top", 0.f) : 0.f;
+        uv.right = pUV ? pUV->GetAttributeAsFloat("right", 1.f) : 1.f;
+        uv.bottom = pUV ? pUV->GetAttributeAsFloat("bottom", 1.f) : 1.f;
+        return uv;
+    };
+    const auto getInt = [](ATTRIBUTES *a, const char *name) {
+        return static_cast<int32_t>(BIUtils::GetIntFromAttr(a, name, 0));
+    };
+    const auto createImage = [this](const char *texture, const FRECT &uv, int32_t left, int32_t top, int32_t right,
+                                    int32_t bottom) {
+        return static_cast<BIImage *>(
+            m_pImgRender->CreateImage(BIType_square, texture, 0, uv, left, top, right, bottom));
+    };
+
+    // the back
+    auto *const pPos = pA ? pA->GetAttributeClass("globalpos") : nullptr;
+    FRECT frFull;
+    FULLRECT(frFull);
+    m_Potc.pBack = createImage(BIUtils::GetStringFromAttr(pA, "BackTextureName", ""), frFull, getInt(pPos, "left"),
+                               getInt(pPos, "top"), getInt(pPos, "right"), getInt(pPos, "bottom"));
+
+    // the icons in a row
+    auto *const pSize = pA ? pA->GetAttributeClass("iconsize") : nullptr;
+    const auto w = getInt(pSize, "x");
+    const auto h = getInt(pSize, "y");
+    auto *const pIcons = pA ? pA->GetAttributeClass("Icons") : nullptr;
+    auto *const pIconsUV = pA ? pA->GetAttributeClass("IconsTexture") : nullptr;
+    const auto top = getInt(pIcons, "topOffset");
+    const char *icons = BIUtils::GetStringFromAttr(pA, "IconsTextureName", "");
+    const auto createIcon = [&](const char *texture, const char *leftName, const FRECT &uv) {
+        const auto left = getInt(pIcons, leftName);
+        return createImage(texture, uv, left, top, left + w, top + h);
+    };
+    const auto iconUV = [&](const char *name) {
+        return readUV(pIconsUV ? pIconsUV->GetAttributeClass(name) : nullptr);
+    };
+    m_Potc.pHull = createIcon(icons, "leftHull", iconUV("hull"));
+    m_Potc.pSail = createIcon(icons, "leftSail", iconUV("sail"));
+    m_Potc.pCrew = createIcon(icons, "leftCrew", iconUV("crew"));
+    m_Potc.pSpeed = createIcon(icons, "leftSpeed", iconUV("speed"));
+    m_Potc.pCannons = createIcon(icons, "leftCannons", iconUV("cannons"));
+    for (const char *charge : {"charge0", "charge1", "charge2", "charge3"})
+        m_Potc.aChargeUV.push_back(iconUV(charge));
+    m_Potc.pCharge = createIcon(icons, "leftCharge", m_Potc.aChargeUV[0]);
+    // the nation codes of the scripts (TranslateNationCode)
+    auto *const pNationsUV = pIconsUV ? pIconsUV->GetAttributeClass("nations") : nullptr;
+    for (const char *nation : {"portugal", "spain", "pirate", "england", "holland", "france"})
+        m_Potc.aNationUV.push_back(readUV(pNationsUV ? pNationsUV->GetAttributeClass(nation) : nullptr));
+    m_Potc.pNation = createIcon(BIUtils::GetStringFromAttr(pA, "NationsTextureName", ""), "leftNation",
+                                m_Potc.aNationUV[0]);
+
+    // the texts
+    auto *const pText = pA ? pA->GetAttributeClass("ShipText") : nullptr;
+    m_Potc.nTextFont = rs->LoadFont(BIUtils::GetStringFromAttr(pText, "font", "interface_normal"));
+    m_Potc.fTextScale = BIUtils::GetFloatFromAttr(pText, "scale", 1.f);
+    m_Potc.nTextLeft = getInt(pText, "left");
+    m_Potc.nNameTop = getInt(pText, "topName");
+    m_Potc.nTypeTop = getInt(pText, "topType");
+    auto *const pDigit = pA ? pA->GetAttributeClass("DigitData") : nullptr;
+    m_Potc.nDigitFont = rs->LoadFont(BIUtils::GetStringFromAttr(pDigit, "font", "bold_numbers"));
+    m_Potc.fDigitScale = BIUtils::GetFloatFromAttr(pDigit, "scale", 1.f);
+    m_Potc.nDigitTop = getInt(pDigit, "topOffset");
+    m_Potc.nHullLeft = getInt(pDigit, "leftHull");
+    m_Potc.nSailLeft = getInt(pDigit, "leftSail");
+    m_Potc.nCrewLeft = getInt(pDigit, "leftCrew");
+    m_Potc.nSpeedLeft = getInt(pDigit, "leftSpeed");
+    m_Potc.nCannonsLeft = getInt(pDigit, "leftCannons");
+
+    SetPotcPanelAlpha(0.f);
+}
+
+void ISPYGLASS::ReleasePotcPanel()
+{
+    for (auto **ppImage : {&m_Potc.pBack, &m_Potc.pNation, &m_Potc.pHull, &m_Potc.pSail, &m_Potc.pCrew,
+                           &m_Potc.pSpeed, &m_Potc.pCannons, &m_Potc.pCharge})
+        STORM_DELETE(*ppImage);
+    if (rs)
+    {
+        if (m_Potc.nTextFont >= 0)
+            rs->UnloadFont(m_Potc.nTextFont);
+        if (m_Potc.nDigitFont >= 0)
+            rs->UnloadFont(m_Potc.nDigitFont);
+    }
+    m_Potc.nTextFont = m_Potc.nDigitFont = -1;
+}
+
+void ISPYGLASS::UpdatePotcPanel(const char *pcShipName, const char *pcShipType, int32_t nHull, int32_t nSail,
+                                int32_t nCrew, float fSpeed, int32_t nCannons, int32_t nCharge, int32_t nNation)
+{
+    // -1 hides the value
+    const auto show = [](BIImage *pImage, bool bShow) {
+        if (pImage)
+            pImage->CutSide(0.f, bShow ? 0.f : 1.f, 0.f, 0.f);
+    };
+    const auto number = [](int32_t n, const char *suffix) {
+        return n >= 0 ? std::to_string(n) + suffix : std::string();
+    };
+    m_Potc.sName = pcShipName;
+    m_Potc.sType = pcShipType;
+    m_Potc.sHull = number(nHull, "%");
+    m_Potc.sSail = number(nSail, "%");
+    m_Potc.sCrew = number(nCrew, "");
+    m_Potc.sCannons = number(nCannons, "");
+    char buf[32] = {};
+    if (fSpeed >= 0.f)
+        sprintf_s(buf, sizeof(buf), "%.1f", fSpeed);
+    m_Potc.sSpeed = buf;
+    show(m_Potc.pHull, nHull >= 0);
+    show(m_Potc.pSail, nSail >= 0);
+    show(m_Potc.pCrew, nCrew >= 0);
+    show(m_Potc.pSpeed, fSpeed >= 0.f);
+    show(m_Potc.pCannons, nCannons >= 0);
+    const auto bCharge = nCharge >= 0 && nCharge < static_cast<int32_t>(m_Potc.aChargeUV.size());
+    if (bCharge && m_Potc.pCharge)
+        m_Potc.pCharge->SetUV(m_Potc.aChargeUV[nCharge]);
+    show(m_Potc.pCharge, bCharge);
+    const auto bNation = nNation >= 0 && nNation < static_cast<int32_t>(m_Potc.aNationUV.size());
+    if (bNation && m_Potc.pNation)
+        m_Potc.pNation->SetUV(m_Potc.aNationUV[nNation]);
+    show(m_Potc.pNation, bNation);
+}
+
+void ISPYGLASS::SetPotcPanelAlpha(float fAlpha)
+{
+    m_Potc.fAlpha = fAlpha;
+    const auto dwColor = (static_cast<uint32_t>(fAlpha * 255.f) << 24) | 0x808080;
+    for (auto *pImage : {m_Potc.pBack, m_Potc.pNation, m_Potc.pHull, m_Potc.pSail, m_Potc.pCrew, m_Potc.pSpeed,
+                         m_Potc.pCannons, m_Potc.pCharge})
+        if (pImage)
+            pImage->SetColor(dwColor);
 }

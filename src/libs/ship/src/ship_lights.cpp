@@ -52,6 +52,9 @@ bool ShipLights::Init()
 
 void ShipLights::Release(VAI_OBJBASE *pObject)
 {
+    // the ship is deleted: its lights must not be used any more
+    std::erase_if(aLights, [pObject](const ShipLight &light) { return light.pObject == pObject; });
+    aSelectedLights.clear();
 }
 
 float ShipLights::GetAttributeAsFloat(ATTRIBUTES *pA, const char *pName, float fDefault)
@@ -380,6 +383,7 @@ void ShipLights::AddLights(VAI_OBJBASE *pObject, MODEL *pModel, bool bLights, bo
 
     const std::string sFlares = "flares";
     const std::string sLights = "lights";
+    auto bModelLights = false;
     uint32_t dwIdx = 0;
     while (pNode = pModel->GetNode(dwIdx))
     {
@@ -391,16 +395,34 @@ void ShipLights::AddLights(VAI_OBJBASE *pObject, MODEL *pModel, bool bLights, bo
 
             if (sFlares == label.group_name)
             {
+                bModelLights = true;
                 AddFlare(pObject, false, pModel, label);
                 continue;
             }
 
             if (sLights == label.group_name)	
             {
+                bModelLights = true;
                 AddFlare(pObject, true, pModel, label);
             }
         }
         dwIdx++;
+    }
+
+    // Pirates of the Caribbean: the ship models have no lights, a lantern at the top of the stern
+    if (!bModelLights && pRoot && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        pRoot->geo->GetInfo(info);
+        CMatrix m;
+        m.SetPosition(info.boxcenter.x, info.boxcenter.y + info.boxsize.y * 0.5f,
+                      info.boxcenter.z - info.boxsize.z * 0.5f);
+        GEOS::LABEL stern{};
+        memcpy(stern.m, m, sizeof(stern.m));
+        char name[] = "l1";
+        char group[] = "lights";
+        stern.name = name;
+        stern.group_name = group;
+        AddFlare(pObject, true, pModel, stern);
     }
 }
 

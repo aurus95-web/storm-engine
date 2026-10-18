@@ -29,6 +29,9 @@ WdmPlayerShip::WdmPlayerShip()
     actionRadius = 16.0f;
     stormEventTime = 0.0f;
     goForward = false;
+    // Pirates of the Caribbean: the player's ship turns faster
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        maxTurnSpd = 1.0f;
 
     drawCircle = true;
 }
@@ -136,6 +139,14 @@ void WdmPlayerShip::Update(float dltTime)
                     wdmObjects->ships[i]->isSelect = true;
                     if (es->attack)
                         es->attack->isSelect = true;
+                    // Pirates of the Caribbean: the window of the encounter can sail on (the perk SailingProfessional):
+                    // the ship leaves then, it caught the player again at once (the attack takes it to sea anyway)
+                    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+                    {
+                        es->isLive = false;
+                        if (es->attack)
+                            es->attack->isLive = false;
+                    }
                     core.Event("WorldMap_ShipEncounter", "fffl", mtx.Pos().x, mtx.Pos().z, ay, i);
                 }
                 else
@@ -145,7 +156,11 @@ void WdmPlayerShip::Update(float dltTime)
                         wdmObjects->enemyShip = es;
                         es->isEntryPlayer = true;
                     }
-                    if (wdmObjects->enemyShip && r < actionRadius * actionRadius * 4.0f)
+                    // Pirates of the Caribbean: as soon as the ship comes (the pursuers are faster, the closer zone
+                    // was passed at once: the skip button did not show)
+                    const auto skipZone =
+                        core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN ? 6.0f : 4.0f;
+                    if (wdmObjects->enemyShip && r < actionRadius * actionRadius * skipZone)
                     {
                         wdmObjects->enableSkipEnemy = static_cast<WdmEnemyShip *>(wdmObjects->ships[i])->canSkip;
                     }
@@ -185,8 +200,38 @@ void WdmPlayerShip::Update(float dltTime)
             }
         }
     }
+    // Pirates of the Caribbean: the encounter that can be skipped (the skip icon) leaves the map
+    if (wdmObjects->enableSkipEnemy && wdmObjects->enemyShip &&
+        core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        CONTROL_STATE cs;
+        core.Controls->GetControlState("WMapSkipEncounter", cs);
+        if (cs.state == CST_ACTIVATED)
+        {
+            // it fades out and frees the slot of its encounter (WdmEnemyShip::Update)
+            auto *const es = static_cast<WdmEnemyShip *>(wdmObjects->enemyShip);
+            es->isLive = false;
+            if (es->attack)
+                es->attack->isLive = false;
+            wdmObjects->enemyShip = nullptr;
+            wdmObjects->enableSkipEnemy = false;
+        }
+    }
     if (wdmObjects->wm && wdmObjects->wm->AttributesPointer)
     {
+        // the touch screen shows the skip button then
+        wdmObjects->wm->AttributesPointer->SetAttributeUseDword("encounter_skip", wdmObjects->enableSkipEnemy);
+        // and the picture of BigIcons.tga of the icons of the map (WdmIcon) where the ship goes to sea:
+        // the encounter, the storm, the island or the open sea
+        int32_t seaIcon = 4;
+        if (const auto *es = static_cast<WdmEnemyShip *>(wdmObjects->enemyShip))
+            seaIcon = es->shipType == wdmest_merchant ? 1 : es->shipType == wdmest_warring ? 2
+                    : es->shipType == wdmest_follow ? 3 : 0;
+        else if (wdmObjects->playarInStorm)
+            seaIcon = 5;
+        else if (wdmObjects->curIsland)
+            seaIcon = 0;
+        wdmObjects->wm->AttributesPointer->SetAttributeUseDword("sea_icon", seaIcon);
         wdmObjects->wm->AttributesPointer->SetAttributeUseFloat("playerShipX", mtx.Pos().x);
         wdmObjects->wm->AttributesPointer->SetAttributeUseFloat("playerShipZ", mtx.Pos().z);
         wdmObjects->wm->AttributesPointer->SetAttributeUseFloat("playerShipAY", ay);
@@ -368,6 +413,9 @@ void WdmPlayerShip::Move(float dltTime)
     }
     core.Controls->GetControlState("WMapShipSailDown", cs);
     // Turns
+    const auto turnAcceleration =
+        WDM_SHIP_INER_ST * WDM_SHIP_TSPEED *
+        (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN ? 2.0f : 1.0f);
     auto isTurn = false;
     core.Controls->GetControlState("WMapShipTurnLeft", cs);
     if (cs.state == CST_ACTIVE)
@@ -376,7 +424,7 @@ void WdmPlayerShip::Move(float dltTime)
     if (cs.state == CST_ACTIVE)
         isTurn = true;
     if (isTurn)
-        turnspd -= WDM_SHIP_INER_ST * WDM_SHIP_TSPEED * dltTime;
+        turnspd -= turnAcceleration * dltTime;
     isTurn = false;
     core.Controls->GetControlState("WMapShipTurnRight", cs);
     if (cs.state == CST_ACTIVE)
@@ -385,7 +433,7 @@ void WdmPlayerShip::Move(float dltTime)
     if (cs.state == CST_ACTIVE)
         isTurn = true;
     if (isTurn)
-        turnspd += WDM_SHIP_INER_ST * WDM_SHIP_TSPEED * dltTime;
+        turnspd += turnAcceleration * dltTime;
 }
 
 void WdmPlayerShip::Collide()

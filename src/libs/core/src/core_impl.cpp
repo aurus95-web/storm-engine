@@ -313,6 +313,8 @@ void CoreImpl::ProcessEngineIniFile()
     {
         if (!Compiler->CreateProgram(String))
         {
+            // the compiler errors are in compile.log, write it out before blocking on the message box
+            spdlog::apply_all([](const std::shared_ptr<spdlog::logger> &logger) { logger->flush(); });
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", "Failed to compile program.", nullptr);
             throw std::runtime_error("fail to create program");
         }

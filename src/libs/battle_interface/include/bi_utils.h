@@ -88,6 +88,13 @@ class BIUtils
   public: // functions
     static int32_t GetIntFromAttr(ATTRIBUTES *pA, const char *name, int32_t defVal);
     static float GetFloatFromAttr(ATTRIBUTES *pA, const char *name, float defVal);
+    // touch screens: the scale of the icons of the given height to the size of the on-screen buttons (a tenth of the
+    // screen height, the screen height is returned too); 1 otherwise
+    static float GetTouchIconScale(int32_t iconHeight, int32_t &screenHeight);
+    // Pirates of the Caribbean: the arrows of the scroll of the commands (the scripts have thin buttons at their
+    // ends), to the right of the shown commands and wide enough for the fingers
+    static void SetPotcCommandArrows(ATTRIBUTES &list, int32_t maxShow, int32_t iconWidth, int32_t iconHeight,
+                                     int32_t space);
     static bool ReadStringFromAttr(ATTRIBUTES *pA, const char *name, char *buf, int32_t bufSize, const char *defVal);
     static const char *GetStringFromAttr(ATTRIBUTES *pA, const char *name, const char *defVal);
     static int32_t GetTextureFromAttr(VDX9RENDER *rs, ATTRIBUTES *pA, const char *sAttrName);

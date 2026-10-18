@@ -94,7 +94,11 @@ void AIHelper::CalculateRelations()
                 auto *pData =
                     core.Event(GET_RELATION_EVENT, "ll", GetIndex(aMainCharacters[y]), GetIndex(aMainCharacters[x]));
                 Assert(pData);
-                *GetRelation(y, x) = static_cast<uint32_t>(pData->GetInt());
+                auto relation = pData->GetInt();
+                // Pirates of the Caribbean: friend 0, neutral 1, enemy 2 (later: 1, 2, 3)
+                if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+                    relation++;
+                *GetRelation(y, x) = static_cast<uint32_t>(relation);
             }
             else
             {

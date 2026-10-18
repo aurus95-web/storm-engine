@@ -79,9 +79,10 @@ void ISLAND_DESCRIBER::SetIsland(ATTRIBUTES *pAIsland)
                 m_pLocators[i].texIdx = lTmp;
             if (pvdat->Get(lTmp, 3))
                 m_pLocators[i].picIdx = lTmp;
-            if (pvdat->Get(lTmp, 4))
+            // Pirates of the Caribbean returns 4 values: no selected picture and disease
+            if (pvdat->GetElementsNum() > 4 && pvdat->Get(lTmp, 4))
                 m_pLocators[i].selPicIdx = lTmp;
-            if (pvdat->Get(lTmp, 5))
+            if (pvdat->GetElementsNum() > 5 && pvdat->Get(lTmp, 5))
                 m_pLocators[i].bDiseased = (lTmp != 0);
             m_pLocators[i].pchr_note = pATmp->GetAttribute("labelLoc");
         }

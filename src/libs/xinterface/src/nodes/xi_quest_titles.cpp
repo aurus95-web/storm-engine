@@ -370,7 +370,12 @@ void CXI_QUESTTITLE::SetNewTopQuest(ATTRIBUTES *pA, int topNum)
             const char *pTmpQuestRecordID = pAttr->GetAttribute("LogName");
             if (!pTmpQuestRecordID)
                 pTmpQuestRecordID = pAttr->GetThisName();
-            if (ptrOwner->QuestFileReader()->GetQuestTitle(pTmpQuestRecordID, pAttr->GetThisName(), param))
+            // a quest without its title in the texts (the gaps of the data of Pirates of the Caribbean) shows its
+            // ID: without lines its icon would cover the next one
+            const auto found = ptrOwner->QuestFileReader()->GetQuestTitle(pTmpQuestRecordID, pAttr->GetThisName(), param);
+            if (!found && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+                param = pTmpQuestRecordID;
+            if (found || !param.empty())
             {
                 const size_t titleSize = param.size();
                 if (titleSize == 0)

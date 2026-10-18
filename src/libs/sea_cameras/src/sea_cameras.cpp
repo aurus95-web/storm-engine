@@ -44,7 +44,9 @@ void SEA_CAMERAS::ProcessMessage(uint32_t iMsg, uint32_t wParam, uint32_t lParam
 uint64_t SEA_CAMERAS::ProcessMessage(MESSAGE &message)
 {
     uint32_t i;
-    switch (message.Long())
+    // Pirates of the Caribbean scripts set the camera without a message code: "ia" camera, character
+    const auto code = message.GetCurrentFormatType() == 'i' ? AI_CAMERAS_SET_CAMERA : message.Long();
+    switch (code)
     {
     case AI_CAMERAS_ADD_CAMERA: {
         const auto eidCamera = message.EntityID();

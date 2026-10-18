@@ -59,7 +59,7 @@ class AIBalls : public Entity
     float fBallFlySoundStereoMultiplier{};
 
     std::string sTextureName;          // texture name
-    uint32_t dwTextureIndex{};         // texture index
+    uint32_t dwTextureIndex = static_cast<uint32_t>(-1); // texture index
     uint32_t dwSubTexX{}, dwSubTexY{}; // all balls must be in one texture
     uint32_t dwFireBallFromCameraTime;
 

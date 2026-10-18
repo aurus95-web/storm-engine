@@ -34,6 +34,9 @@ class DlgLinkDescribe final
     DlgLinkDescribe &SetSelectedColor(uint32_t color);
 
     [[nodiscard]] int32_t GetSelectedLine() const noexcept;
+    // the link shown at the height y of the screen, -1 if none
+    [[nodiscard]] int32_t GetLinkAt(int32_t y) const noexcept;
+    DlgLinkDescribe &Select(int32_t link);
     [[nodiscard]] bool IsInEditMode() const noexcept;
 
     [[nodiscard]] bool CanMoveUp() const noexcept;

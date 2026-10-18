@@ -6,6 +6,7 @@
 #include <map>
 
 #include "core.h"
+#include "string_compare.hpp"
 
 #include "storm_assert.h"
 
@@ -138,7 +139,7 @@ bool QuestFileReader::GetQuestTitle(const std::string_view &questId, const std::
     const auto n = FindQuestByID(questId);
     if (!n.has_value())
     {
-        spdlog::warn("Can`t find title whith ID = %s", questId);
+        spdlog::warn("Can`t find title whith ID = {}", questId);
         return false;
     }
 
@@ -361,8 +362,10 @@ std::optional<size_t> QuestFileReader::FindQuestByID(const std::string_view &que
     if (questID.empty())
         return std::nullopt;
 
+    // the scripts of Pirates of the Caribbean write the IDs in different cases ("blaze_search_rheims" for
+    // "Blaze_search_Rheims")
     for (size_t i = 0; i < quests_.size(); ++i)
-        if (quests_[i].questID == questID)
+        if (storm::iEquals(quests_[i].questID, questID))
             return i;
 
     return std::nullopt;
@@ -376,7 +379,7 @@ std::optional<size_t> QuestFileReader::FindTextByID(QuestFileReader::QuestDescri
 
     auto &questTexts = nQuest.texts;
     for (size_t i = 0; i < questTexts.size(); ++i)
-        if (questTexts[i].id == textID)
+        if (storm::iEquals(questTexts[i].id, textID))
             return i;
 
     return std::nullopt;

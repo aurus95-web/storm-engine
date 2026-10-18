@@ -14,6 +14,7 @@
 #include "location_camera.h"
 #include "collide.h"
 #include "shared/messages.h"
+#include "shared/battle_interface/log_msg.h"
 
 // ============================================================================================
 // Construction, destruction
@@ -36,6 +37,8 @@ Player::Player()
 
 Player::~Player()
 {
+    if (isTimeScale)
+        core.SetTimeScale(1.0f);
     entid_t peid;
     if (peid = core.GetEntityId("ShootGunParticles"))
         core.EraseEntity(peid);
@@ -156,6 +159,14 @@ void Player::Move(float dltTime)
             }
             if (IsFight())
             {
+                // Pirates of the Caribbean has a control to recoil (the others recoil going back)
+                if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+                {
+                    CONTROL_STATE cs;
+                    core.Controls->GetControlState("ChrRecoil", cs);
+                    if (cs.state == CST_ACTIVATED)
+                        Recoil();
+                }
                 if (IsDoBlock())
                 {
                     // boal -->
@@ -253,6 +264,44 @@ void Player::Move(float dltTime)
 void Player::Update(float dltTime)
 {
     auto aDialog = false;
+    // Pirates of the Caribbean shows the talk action icon when a dialog character is near
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        CONTROL_STATE cs;
+        core.Controls->GetControlState("TimeScale", cs);
+        if (cs.state == CST_ACTIVATED)
+        {
+            isTimeScale = !isTimeScale;
+            core.SetTimeScale(isTimeScale ? 3.0f : 1.0f);
+        }
+        // not in the fight: its controls have no time acceleration to turn it off
+        if (isTimeScale && IsFight())
+        {
+            isTimeScale = false;
+            core.SetTimeScale(1.0f);
+        }
+        const bool canTalk = task.task == npct_none && !IsFight() && FindDialogCharacter() != nullptr;
+        if (canTalk != isTalkAction)
+        {
+            isTalkAction = canTalk;
+            if (const auto logAndActions = core.GetEntityId("ILogAndActions"))
+            {
+                // the last action set by the scripts (the reload of the boarding...) comes back after the talk
+                const auto *pA = core.Entity_GetAttributePointer(logAndActions);
+                const char *current = pA ? pA->GetAttribute("CurrentAction") : nullptr;
+                const char *scriptAction = pA ? pA->GetAttribute("ScriptAction") : nullptr;
+                if (canTalk)
+                {
+                    core.Send_Message(logAndActions, "ls", LOG_SET_ACTIVE_ACTION, "Talk");
+                }
+                else if (current && std::string_view(current) == "Talk")
+                {
+                    core.Send_Message(logAndActions, "ls", LOG_SET_ACTIVE_ACTION,
+                                      scriptAction && scriptAction[0] ? scriptAction : "Nothing");
+                }
+            }
+        }
+    }
     if (task.task == npct_none)
     {
         if (!IsFight())
@@ -349,7 +398,15 @@ void Player::Rotate(float dltTime)
             a = 0.3f;
         if (a < -0.3f)
             a = -0.3f;
-        Turn(GetAY() + a);
+        // Pirates of the Caribbean: the mouse turns the player at once, not with the turn speed of the animation
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN && !isTurnLock)
+        {
+            // kept in -pi..pi: Turn() unwinds the extra turns of the angle with the turn speed
+            ay = std::remainder(ay + a * 0.35f, 2.0f * 3.14159265359f);
+            nay = ay;
+        }
+        else
+            Turn(GetAY() + a);
     }
     else
     {
@@ -571,6 +628,13 @@ bool Player::IsDoAttackFast()
     core.Controls->GetControlState("ChrAttackFast2", cs);
     if (cs.state == CST_ACTIVATED)
         bPressed = true;
+    // Pirates of the Caribbean has one attack control
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        core.Controls->GetControlState("ChrAttack", cs);
+        if (cs.state == CST_ACTIVATED)
+            bPressed = true;
+    }
     return bPressed;
 }
 

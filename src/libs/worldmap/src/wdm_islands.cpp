@@ -38,6 +38,62 @@ WdmIslands::WdmIslands()
     icons.texture = -1;
     LabelsRelease();
     wdmObjects->islands = this;
+    // Pirates of the Caribbean: one visible model of all the islands, the island zones are circles from the
+    // script attributes (worldMap.islands.<id>.position, radius)
+    isPotc = core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN;
+    if (isPotc)
+    {
+        baseModel = static_cast<WdmRenderModel *>(
+            wdmObjects->wm->CreateModel(new WdmRenderModel(), "islands", false, false, true, 1));
+        // the ships collide with this model as with one island (no areas, palms and foam)
+        if (baseModel && baseModel->geo)
+        {
+            islands.push_back(Islands{});
+            auto &isl = islands.back();
+            isl.model = baseModel;
+            isl.toLocal = baseModel->mtx;
+            isl.toLocal.Transposition();
+            isl.modelName = "islands";
+            isl.worldPosition = baseModel->mtx.Pos();
+            baseModel = nullptr; // deleted with the islands
+        }
+        auto *const pIslands =
+            wdmObjects->wm->AttributesPointer ? wdmObjects->wm->AttributesPointer->GetAttributeClass("islands") : nullptr;
+        for (size_t i = 0; pIslands && i < pIslands->GetAttributesNum(); i++)
+        {
+            auto *const pA = pIslands->GetAttributeClass(i);
+            auto *const pPos = pA ? pA->GetAttributeClass("position") : nullptr;
+            if (!pPos)
+                continue;
+            potcZones.push_back(PotcIslandZone{std::string(pA->GetThisName()), pPos->GetAttributeAsFloat("x", 0.0f),
+                                               pPos->GetAttributeAsFloat("z", 0.0f),
+                                               pA->GetAttributeAsFloat("radius", 100.0f),
+                                               pA->GetAttributeAsFloat("kradius", 1.0f)});
+            // the approach point (rx, rz): the destination of merchants and of the encounters sent to the island
+            const CVECTOR approach(pPos->GetAttributeAsFloat("rx", 0.0f), 0.0f, pPos->GetAttributeAsFloat("rz", 0.0f));
+            merchants.push_back(approach);
+            quests.push_back(Quest{approach, pA->GetThisName()});
+            // the models of the locations (towns, shores): locations.<id>.modelName, position.x/y/z/ay; all of them,
+            // not only the visited ones (visible), are shown
+            auto *const pLocations = pA->GetAttributeClass("locations");
+            for (size_t n = 0; pLocations && n < pLocations->GetAttributesNum(); n++)
+            {
+                auto *const pL = pLocations->GetAttributeClass(n);
+                const char *modelName = pL ? pL->GetAttribute("modelName") : nullptr;
+                auto *const pLPos = pL ? pL->GetAttributeClass("position") : nullptr;
+                if (!modelName || !modelName[0] || !pLPos)
+                    continue;
+                auto *const model = static_cast<WdmRenderModel *>(
+                    wdmObjects->wm->CreateModel(new WdmRenderModel(), modelName, false, false, true, 3));
+                if (!model)
+                    continue;
+                model->mtx.BuildMatrix(0.0f, pLPos->GetAttributeAsFloat("ay", 0.0f), 0.0f,
+                                       pLPos->GetAttributeAsFloat("x", 0.0f), pLPos->GetAttributeAsFloat("y", 0.0f),
+                                       pLPos->GetAttributeAsFloat("z", 0.0f));
+            }
+        }
+        return;
+    }
     // Loading the base model
     baseModel = static_cast<WdmRenderModel *>(
         wdmObjects->wm->CreateModel(new WdmRenderModel(), "islands\\islands", false, false, false, 1));
@@ -356,6 +412,63 @@ void WdmIslands::SetIslandsData(ATTRIBUTES *apnt, bool isChange)
     }
     if (!apnt)
         return;
+    // Pirates of the Caribbean: the names of the islands and of their visible locations (worldMap.islands.<id>.label,
+    // worldMap.islands.<id>.locations.<id>.label) at their positions
+    if (isPotc)
+    {
+        if (isChange)
+            return;
+        const auto isTrue = [](ATTRIBUTES *pA, const char *name) {
+            const char *value = pA ? pA->GetAttribute(name) : nullptr;
+            return value && !storm::iEquals(value, "false") && !storm::iEquals(value, "0");
+        };
+        const auto addLabel = [this, &isTrue](ATTRIBUTES *pA, float heightView, bool always) {
+            auto *const pLabel = pA ? pA->GetAttributeClass("label") : nullptr;
+            auto *const pPos = pA ? pA->GetAttributeClass("position") : nullptr;
+            const char *text = pLabel ? pLabel->GetAttribute("text") : nullptr;
+            if (!text || !pPos || !always && !isTrue(pLabel, "visible"))
+                return;
+            labels.push_back(Label{});
+            auto &label = labels.back();
+            label.id = pA->GetThisName();
+            label.idHash = MakeHashValue(label.id.c_str());
+            label.next = -1;
+            label.alpha = 255.0f;
+            label.text = text;
+            label.font = LabelsAddFont("interface_normal");
+            const auto icon = static_cast<int32_t>(pLabel->GetAttributeAsDword("icon", static_cast<uint32_t>(-1)));
+            label.icon = icons.texture >= 0 && icon >= 0 && icon < static_cast<int32_t>(icons.num) ? icon : -1;
+            label.pos = CVECTOR(pPos->GetAttributeAsFloat("x", 0.0f), pPos->GetAttributeAsFloat("y", 0.0f),
+                                pPos->GetAttributeAsFloat("z", 0.0f));
+            label.heightView = heightView;
+            label.weight = 0;
+            const float textWidth = static_cast<float>(wdmObjects->rs->StringWidth(label.text.c_str(), label.font));
+            const float textHeight = static_cast<float>(wdmObjects->rs->CharHeight(label.font));
+            const float width = textWidth + (label.icon >= 0 ? icons.w + 4.0f : 0.0f);
+            const float height = label.icon >= 0 ? std::max(textHeight, icons.h) : textHeight;
+            label.dl = -0.5f * width;
+            label.dt = -0.5f * height;
+            label.dr = label.dl + width;
+            label.db = label.dt + height;
+            label.iconX = 0.0f;
+            label.iconY = label.icon >= 0 ? (height - icons.h) * 0.5f : 0.0f;
+            label.textX = label.icon >= 0 ? icons.w + 4.0f : 0.0f;
+            label.textY = label.icon >= 0 ? (height - textHeight) * 0.5f : 0.0f;
+        };
+        auto *const pIslands = apnt->GetAttributeClass("islands");
+        for (size_t i = 0; pIslands && i < pIslands->GetAttributesNum(); i++)
+        {
+            auto *const pA = pIslands->GetAttributeClass(i);
+            addLabel(pA, 1000.0f, false);
+            auto *const pLocations = pA ? pA->GetAttributeClass("locations") : nullptr;
+            for (size_t n = 0; pLocations && n < pLocations->GetAttributesNum(); n++)
+            {
+                // all the locations, as their models
+                addLabel(pLocations->GetAttributeClass(n), 250.0f, true);
+            }
+        }
+        return;
+    }
     // Get the description of the labels
     apnt = apnt->FindAClass(apnt, "labels");
     if (!apnt)
@@ -601,8 +714,46 @@ void WdmIslands::LabelsRelease()
     icons.texture = -1;
 }
 
+void WdmIslands::UpdatePotcZones()
+{
+    std::string zone;
+    const char *nearIsland = nullptr;
+    if (wdmObjects->playerShip)
+    {
+        float x, z, ay;
+        wdmObjects->playerShip->GetPosition(x, z, ay);
+        for (const auto &island : potcZones)
+        {
+            const auto d2 = (x - island.x) * (x - island.x) + (z - island.z) * (z - island.z);
+            if (d2 <= island.radius * island.radius)
+            {
+                zone = island.id;
+                // between the inner (kradius) and the whole zone
+                const auto iconRadius = island.radius * (1.0f + island.kradius) * 0.5f;
+                if (d2 <= iconRadius * iconRadius)
+                    nearIsland = island.id.c_str();
+                break;
+            }
+        }
+    }
+    // the island icon of WdmIcon
+    wdmObjects->curIsland = nearIsland;
+    if (zone == potcCurrentZone)
+        return;
+    if (!potcCurrentZone.empty())
+        core.Event("WorldMap_outside_islandzone", "s", potcCurrentZone.c_str());
+    potcCurrentZone = zone;
+    if (!potcCurrentZone.empty())
+        core.Event("WorldMap_inside_islandzone", "s", potcCurrentZone.c_str());
+}
+
 void WdmIslands::Update(float dltTime)
 {
+    if (isPotc)
+    {
+        UpdatePotcZones();
+        return;
+    }
     if (wdmObjects->playerShip)
     {
         CVECTOR pos;

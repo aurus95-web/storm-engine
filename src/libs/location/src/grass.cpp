@@ -425,7 +425,10 @@ void Grass::Realize(uint32_t delta_time)
         ATTRIBUTES *pA = core.Entity_GetAttributePointer(eidIsland);
         if (pA)
             fIslandFogDensity = pA->GetAttributeAsFloat("FogDensity", 0.0f);
-        rs->SetRenderState(D3DRS_FOGDENSITY, F2DW(fIslandFogDensity));
+        // Pirates of the Caribbean does not set the island fog: keep the location fog
+        if (pA && pA->GetAttribute("FogDensity") ||
+            core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+            rs->SetRenderState(D3DRS_FOGDENSITY, F2DW(fIslandFogDensity));
     }
     // Set up the stages
     uint32_t cop, carg1, cop1, aop, aarg1;

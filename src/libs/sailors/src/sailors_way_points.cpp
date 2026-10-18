@@ -260,64 +260,51 @@ void SailorsPoints::DrawLinks(VDX9RENDER *rs)
 
 //--------------------------------------------------------------------------------------------------------------
 
-Path SailorsPoints::getPath(int src, int dst, int l)
-{
-    Path mPath;
-    Path x;
-
-    mPath.min = -1;
-    mPath.point[l] = src;
-
-    if (src == dst)
-    {
-        mPath.length = l;
-        mPath.min = 0;
-        return mPath;
-    }
-
-    if (PointsPassed[src] == 1)
-        return mPath;
-    PointsPassed[src] = true;
-
-    for (auto i = 0; i < points.count; i++)
-    {
-        if (matrix[src][i] == 0)
-            continue;
-
-        x = getPath(i, dst, l + 1);
-
-        if (x.min == -1)
-            continue;
-
-        x.min += matrix[src][i];
-
-        x.point[l] = src;
-
-        if (mPath.min == -1 || x.min < mPath.min)
-            mPath = x;
-    }
-
-    PointsPassed[src] = false;
-
-    return mPath;
-};
-
-//--------------------------------------------------------------------------------------------------------------
-
 Path SailorsPoints::findPath(Path &path, int from, int to)
 {
-    path = getPath(from, to, 0);
-
-    if (path.min == -1)
+    // the shortest way (Dijkstra): the search of all the ways never ended on the decks with many linked points
+    path = Path();
+    path.length = 0;
+    const auto n = points.count;
+    if (from < 0 || to < 0 || from >= n || to >= n)
+        return path;
+    std::vector<float> distance(n, -1.f);
+    std::vector<int> previous(n, -1);
+    std::vector<bool> done(n, false);
+    distance[from] = 0.f;
+    for (;;)
     {
-        path.length = 0;
+        auto u = -1;
+        for (auto i = 0; i < n; i++)
+        {
+            if (!done[i] && distance[i] >= 0.f && (u < 0 || distance[i] < distance[u]))
+                u = i;
+        }
+        if (u < 0 || u == to)
+            break;
+        done[u] = true;
+        for (auto i = 0; i < n; i++)
+        {
+            if (matrix[u][i] == 0 || done[i])
+                continue;
+            const auto d = distance[u] + matrix[u][i];
+            if (distance[i] < 0.f || d < distance[i])
+            {
+                distance[i] = d;
+                previous[i] = u;
+            }
+        }
     }
-    else
-    {
-        path.length++;
-        path.point[path.length - 1] = to;
-    }
-
+    if (distance[to] < 0.f)
+        return path;
+    // the points from the first one to the last one
+    auto count = 0;
+    for (auto p = to; p != -1; p = previous[p])
+        count++;
+    path.length = static_cast<uint8_t>(count);
+    path.min = distance[to];
+    for (auto p = to; p != -1; p = previous[p])
+        path.point[--count] = static_cast<uint8_t>(p);
     return path;
 };
 
@@ -455,3 +442,43 @@ int SailorsPoints::ReadFromFile(std::string fileName)
 };
 
 //--------------------------------------------------------------------------------------------------------------
+
+void SailorsPoints::ReadFromScript(int count, VDATA *verts, VDATA *graph, VDATA *types)
+{
+    if (!verts || !graph || !types)
+        return;
+    count = std::min(count, MAX_POINTS);
+    points.point.resize(count);
+    points.count = count;
+    for (auto i = 0; i < count; i++)
+    {
+        auto &point = points.point[i];
+        verts->Get(point.x, i * 3);
+        verts->Get(point.y, i * 3 + 1);
+        verts->Get(point.z, i * 3 + 2);
+        int32_t type = 0;
+        types->Get(type, i);
+        // 0 - deck, 1 - cannon, 2..5 - masts
+        if (type == 1)
+            point.pointType = point.x < 0.0f ? PT_TYPE_CANNON_L : PT_TYPE_CANNON_R;
+        else if (type >= 2 && type <= 6)
+            point.pointType = static_cast<PointType>(PT_TYPE_MAST_1 + type - 2);
+        else
+            point.pointType = PT_TYPE_NORMAL;
+    }
+    // a link is first * 256 + next, (-1) * 256 + (-1) is none
+    links.link.clear();
+    links.count = 0;
+    for (uint32_t i = 0; i < graph->GetElementsNum(); i++)
+    {
+        int32_t value = 0;
+        graph->Get(value, i);
+        const auto first = static_cast<int32_t>(std::floor(value / 256.0f));
+        const auto next = value - first * 256;
+        if (first < 0 || first >= count || next < 0 || next >= count)
+            continue;
+        links.link.push_back(Link{first, next});
+        links.count++;
+    }
+    UpdateLinks();
+}

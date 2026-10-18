@@ -39,6 +39,10 @@ class ATTRIBUTES final
     ATTRIBUTES &operator=(ATTRIBUTES &&other) noexcept;
     ~ATTRIBUTES();
 
+    // whether the attributes exist (not deleted): the save of the script references to them (always true on Windows,
+    // where an access to the deleted ones is caught)
+    static bool IsAlive(const ATTRIBUTES *attributes);
+
     void SetBreak(bool set_break);
     [[nodiscard]] ATTRIBUTES* GetParent() const;
     bool operator==(const char *str) const;

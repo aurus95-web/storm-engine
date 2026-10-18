@@ -350,7 +350,10 @@ void Fader::Realize(uint32_t delta_time)
     rs->DrawPrimitiveUP(D3DPT_TRIANGLELIST, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1 | D3DFVF_TEXTUREFORMAT2, 2,
                         drawbuf_back, sizeof(drawbuf_back[0]), "Fader");
 
-    if (textureID >= 0)
+    // Pirates of the Caribbean shows the picture on the black screen only: fading with the scene it is a dark square
+    const auto isShaded = (color >> 24) == 0xff;
+    if (textureID >= 0 &&
+        (isShaded || core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN))
     {
         drawbuf_front[0].color = color;
         drawbuf_front[1].color = color;

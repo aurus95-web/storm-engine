@@ -3,6 +3,8 @@
 #include "debug-trap.h"
 #include "math_common.hpp"
 #include "storm/errors/InvalidMessageFormatError.hpp"
+#include "storm/layers.hpp"
+#include "string_compare.hpp"
 
 #include <execution>
 
@@ -13,6 +15,39 @@
 extern bool bSteam;
 
 //#define _TOFF
+
+namespace
+{
+// Pirates of the Caribbean scripts name the layers ("sea_realize"), later scripts pass the indices
+// of shared/layers.h; names without a counterpart (e.g. "system_messages") are ignored
+bool GetLayerIndex(DATA *pV, int32_t &index)
+{
+    if (pV->GetType() != VAR_STRING)
+    {
+        return pV->Get(index);
+    }
+    const char *name = nullptr;
+    if (!pV->Get(name) || name == nullptr)
+    {
+        return false;
+    }
+    index = storm::GetLayerIndexByName(name);
+    return index >= 0;
+}
+
+// Classes of Pirates of the Caribbean replaced by later ones: the dialog is LegacyDialog (the "dialog" class is
+// the later DIALOG with another interface), the people on ships are Sailors
+const char *GetEntityClassName(const char *name)
+{
+    if (name == nullptr || core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        return name;
+    if (storm::iEquals(name, "dialog"))
+        return "LegacyDialog";
+    if (storm::iEquals(name, "PEOPLE_ON_SHIP"))
+        return "Sailors";
+    return name;
+}
+} // namespace
 
 enum FUNCTION_CODE
 {
@@ -115,6 +150,13 @@ enum FUNCTION_CODE
     FUNC_CHECKFUNCTION,
     FUNC_GETENGINEVERSION,
     FUNC_SORT,
+    // Pirates of the Caribbean scripts, added last to keep the codes of the other functions
+    FUNC_LAYER_CREATE,
+    FUNC_LAYER_DELETE,
+    FUNC_GETENTITYNEXT,
+    FUNC_GETENTITYNAME,
+    FUNC_FINDCLASS,
+    FUNC_FINDCLASSNEXT,
 };
 
 INTFUNCDESC IntFuncTable[] = {
@@ -147,7 +189,9 @@ INTFUNCDESC IntFuncTable[] = {
     VAR_INTEGER, 1, "FindEntityNext", VAR_INTEGER, 2, "GetSymbol", VAR_STRING, 2, "IsDigit", VAR_INTEGER, 2,
     "SaveVariable", VAR_INTEGER, 2, "LoadVariable", VAR_INTEGER, 2, "SetControlTreshold", TVOID, 2, "LockControl",
     TVOID, 1, "TestRef", VAR_INTEGER, 1, "SetTimeScale", TVOID, 1, "CheckFunction", VAR_INTEGER, 0, "GetEngineVersion",
-    VAR_INTEGER, 1, "sort", TVOID};
+    VAR_INTEGER, 1, "sort", TVOID, 2, "LayerCreate", TVOID, 1, "LayerDelete", TVOID, 1, "GetEntityNext", VAR_INTEGER, 1, "GetEntityName", VAR_STRING,
+    // the old names of FindEntity and FindEntityNext (Pirates of the Caribbean)
+    2, "FindClass", VAR_INTEGER, 1, "FindClassNext", VAR_INTEGER};
 
 /*
 char * FuncNameTable[]=
@@ -369,6 +413,9 @@ bool COMPILER::IsIntFuncVarArgsNum(uint32_t code)
     case FUNC_SEND_MESSAGE:
     case FUNC_EVENT:
     case FUNC_POSTEVENT:
+    // Pirates of the Caribbean scripts pass the layer name and an enable flag
+    case FUNC_LAYER_SET_REALIZE:
+    case FUNC_LAYER_SET_EXECUTE:
 
         return true;
     }
@@ -701,10 +748,28 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             break;
         }
 
-        pV->Convert(VAR_STRING);
-        pV->Get(pChar);
-
-        ent = core.GetEntityId(pChar);
+        // Pirates of the Caribbean: GetEntity(layer, &ref) is the first entity of the layer, GetEntityNext the next
+        if (pV2->GetType() == VAR_STRING && pV->GetType() != VAR_STRING)
+        {
+            std::swap(pV, pV2);
+            pV->Get(pChar);
+            const auto layer = storm::GetLayerIndexByName(pChar ? pChar : "");
+            ent = invalid_entity;
+            if (layer >= 0)
+            {
+                auto &&entities = core.GetEntityIds(static_cast<layer_index_t>(layer));
+                entity_iterator = std::cbegin(entities);
+                entity_iterator_end = std::cend(entities);
+                if (entity_iterator != entity_iterator_end)
+                    ent = *entity_iterator;
+            }
+        }
+        else
+        {
+            pV->Convert(VAR_STRING);
+            pV->Get(pChar);
+            ent = core.GetEntityId(pChar);
+        }
 
         pV2 = pV2->GetVarPointer();
         pV2->Set(ent);
@@ -722,6 +787,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         return pV;
 
     case FUNC_FINDENTITY:
+    case FUNC_FINDCLASS:
         pV = SStack.Pop();
         if (!pV)
         {
@@ -766,6 +832,8 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         return pV;
 
     case FUNC_FINDENTITYNEXT:
+    case FUNC_FINDCLASSNEXT:
+    case FUNC_GETENTITYNEXT:
         pV2 = SStack.Pop();
         if (!pV2)
         {
@@ -1416,11 +1484,26 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(INVALID_FA);
             break;
         }
-        pV->Get(TempLong1);
-        // pV2->Get(TempLong1);
-        // if(TempLong1 == 0) core_internal.LayerSetRealize(pChar,false);
-        // else core_internal.LayerSetRealize(pChar,true);
-        core.SetLayerType(TempLong1, layer_type_t::realize);
+        if (arguments > 1)
+        {
+            // (name, enable flag): the flag is on top of the stack
+            pV2 = pV;
+            pV = SStack.Pop();
+            if (!pV)
+            {
+                SetError(INVALID_FA);
+                break;
+            }
+            pV2->Get(TempLong2);
+            if (!TempLong2)
+            {
+                break;
+            }
+        }
+        if (GetLayerIndex(pV, TempLong1))
+        {
+            core.SetLayerType(TempLong1, layer_type_t::realize);
+        }
         break;
     case FUNC_LAYER_SET_EXECUTE:
         // pV2 = SStack.Pop(); if(!pV2){SetError(INVALID_FA);break;};
@@ -1430,11 +1513,26 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(INVALID_FA);
             break;
         }
-        pV->Get(TempLong1);
-        // pV2->Get(TempLong1);
-        // if(TempLong1 == 0) core_internal.LayerSetExecute(pChar,false);
-        // else core_internal.LayerSetExecute(pChar,true);
-        core.SetLayerType(TempLong1, layer_type_t::execute);
+        if (arguments > 1)
+        {
+            // (name, enable flag): the flag is on top of the stack
+            pV2 = pV;
+            pV = SStack.Pop();
+            if (!pV)
+            {
+                SetError(INVALID_FA);
+                break;
+            }
+            pV2->Get(TempLong2);
+            if (!TempLong2)
+            {
+                break;
+            }
+        }
+        if (GetLayerIndex(pV, TempLong1))
+        {
+            core.SetLayerType(TempLong1, layer_type_t::execute);
+        }
         break;
         /*case FUNC_LAYER_SET_MESSAGES:
             pV2 = SStack.Pop(); if(!pV2){SetError(INVALID_FA);break;};
@@ -1463,9 +1561,12 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(INVALID_FA);
             break;
         }
-        if (!pV->Get(TempLong2) )
+        if (!GetLayerIndex(pV, TempLong2))
         {
-            SetError(INVALID_FA ", layer index not valid");
+            if (pV->GetType() != VAR_STRING)
+            {
+                SetError(INVALID_FA ", layer index not valid");
+            }
             break;
         }
         pV2->Get(TempEid);
@@ -1485,9 +1586,11 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(INVALID_FA);
             break;
         }
-        pV->Get(TempLong2);
         pV2->Get(TempEid);
-        core.RemoveFromLayer(TempLong2, TempEid);
+        if (GetLayerIndex(pV, TempLong2))
+        {
+            core.RemoveFromLayer(TempLong2, TempEid);
+        }
         break;
     case FUNC_LAYER_FREEZE:
         pV2 = SStack.Pop();
@@ -1502,9 +1605,11 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(INVALID_FA);
             break;
         }
-        pV->Get(TempLong2);
         pV2->Get(TempLong1);
-        core.SetLayerFrozen(TempLong2, TempLong1);
+        if (GetLayerIndex(pV, TempLong2))
+        {
+            core.SetLayerFrozen(TempLong2, TempLong1);
+        }
         break;
 
     case FUNC_IS_Entity_LOADED:
@@ -1587,7 +1692,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
 
         pV2->Get(pChar);
-        if (ent = core.CreateEntity(pChar, pV->GetAClass()); ent)
+        if (ent = core.CreateEntity(GetEntityClassName(pChar), pV->GetAClass()); ent)
         {
             // core_internal.Entity_SetAttributePointer(&entid_t,pV->GetAClass());
             pV->Set(ent);
@@ -1613,7 +1718,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             break;
         }
         pV->Get(pChar);
-        if (ent = core.CreateEntity(pChar); ent)
+        if (ent = core.CreateEntity(GetEntityClassName(pChar)); ent)
         {
             pV = SStack.Push();
             pV->Set(ent);
@@ -2579,6 +2684,51 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pV->Get(pChar);
         core_internal.InitiateStateLoading(pChar);
         break;
+    case FUNC_LAYER_CREATE:
+        // the layers always exist, LayerCreate(name, ordered) only pops its arguments
+        pV2 = SStack.Pop();
+        pV = SStack.Pop();
+        if (!pV || !pV2)
+        {
+            SetError(INVALID_FA);
+        }
+        break;
+    case FUNC_LAYER_DELETE:
+        if (!SStack.Pop())
+        {
+            SetError(INVALID_FA);
+        }
+        break;
+    case FUNC_GETENTITYNAME: {
+        // the class name of the entity (Pirates of the Caribbean)
+        pV = SStack.Pop();
+        if (!pV)
+        {
+            SetError(INVALID_FA);
+            break;
+        }
+        pV = pV->GetVarPointer();
+        ent = invalid_entity;
+        if (pV)
+            pV->Get(ent);
+        const char *name = "";
+        if (core.IsEntityValid(ent))
+        {
+            const auto hash = static_cast<int32_t>(core.GetClassCode(ent));
+            for (auto *c : __STORM_CLASSES_REGISTRY)
+            {
+                if (c->GetHash() == hash && c->GetName())
+                {
+                    name = c->GetName();
+                    break;
+                }
+            }
+        }
+        pV = SStack.Push();
+        pV->Set(name);
+        pVResult = pV;
+        return pV;
+    }
     case FUNC_SORT:
         pV = SStack.Pop();
         if (!pV || pV->GetType() != VAR_AREFERENCE)

@@ -18,6 +18,7 @@ class BIManSign
     void Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA);
 
     size_t AddTexture(const char *pcTextureName, int32_t nCols, int32_t nRows) const;
+    void SetPotcPictures(int32_t nDefaultTexture) const;
 
     void Recollect();
 
@@ -29,6 +30,9 @@ class BIManSign
     bool IsActive() const;
     void SetActive(bool bActive);
     void MakeControl();
+    void TouchControl();
+    // the gamepad: the commands of the computers again (closed until the key opens them)
+    void LeaveTouchMode();
     void ExecuteCommand(int32_t command);
 
   protected:
@@ -88,6 +92,8 @@ class BIManSign
     int32_t m_nAlarmTextureID;
     uint32_t m_dwAlarmHighColor;
     uint32_t m_dwAlarmLowColor;
+    uint32_t m_dwAlarmFaceColor; // the portrait of the main character blinks in it (no alarm icon)
+    bool m_bAlarmFace;
     FRECT m_rAlarmUV;
     BIFPOINT m_pntAlarmOffset;
     FPOINT m_pntAlarmIconSize;
@@ -105,6 +111,9 @@ class BIManSign
     FRECT m_rManEnergyUV;
     BIFPOINT m_pntManEnergyOffset;
     FPOINT m_pntManEnergyIconSize;
+    // the empty track under the bars, the whole length (none if not set)
+    FRECT m_rManStateBackUV;
+    bool m_bManStateBack = false;
 
     int32_t m_nGunChargeTextureID;
     int32_t m_nGunChargeSquareQ;
@@ -149,6 +158,13 @@ class BIManSign
     int32_t m_nManQuantity;
     int32_t m_nCurrentManIndex;
     int32_t m_nCommandListVerticalOffset;
+    // the command menu to the right of the icons row with this gap (Pirates of the Caribbean), -1: not used
+    int32_t m_nCommandListRightGap = -1;
+    // the state bars decrease to the left (Pirates of the Caribbean), not down
+    bool m_bHorizontalBars = false;
+    // a row of loaded/empty bullet pictures (left/right half of the texture) instead of the charge bar
+    int32_t m_nGunChargeBullets = 0;
+    float m_fGunChargeBulletSpace = 0.f;
 
     bool m_bMakeUpdate;
     bool m_bMakeVertexFill;

@@ -22,6 +22,13 @@ class MESSAGE_ICONS
     }
 
     void StartData(ATTRIBUTES *pAData[MESSAGE_ICONS_COLUMN_QUANTITY], int32_t pLeft[MESSAGE_ICONS_COLUMN_QUANTITY]);
+    // the bottom of the icons and their size, instead of the ones of the attributes
+    void SetLayout(int32_t bottom, int32_t width, int32_t height)
+    {
+        m_nBottomY = bottom;
+        m_nMsgIconWidth = width;
+        m_nMsgIconHeight = height;
+    }
     bool InitData(entid_t host_eid, VDX9RENDER *_rs, ATTRIBUTES *pARoot);
 
   protected:

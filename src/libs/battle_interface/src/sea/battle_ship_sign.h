@@ -2,6 +2,7 @@
 
 #include "bi_defines.h"
 #include "ships_list.h"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,11 @@ class BIShipIcon
     bool IsActive() const;
     void SetActive(bool bActive);
     void MakeControl();
+    void TouchControl();
+    // the gamepad: the commands of the computers again (closed until the key opens them)
+    void LeaveTouchMode();
+    // shows the commands of the own ship of the character (Pirates of the Caribbean: the companion command)
+    void SetCommandCharacter(int32_t nCharacterIndex);
     void ExecuteCommand(CommandType command);
 
   protected:
@@ -66,8 +72,11 @@ class BIShipIcon
     ATTRIBUTES *GetSailorQuantityAttribute(SHIP_DESCRIBE_LIST::SHIP_DESCR *pSD);
     float GetProgressShipHP(int32_t nShipNum) const;
     float GetProgressShipSP(int32_t nShipNum);
+    float GetProgressShipCrew(int32_t nShipNum) const;
     float GetProgressShipClass(int32_t nShipNum);
     void GetShipUVFromPictureIndex(int32_t nPicIndex, FRECT &rUV);
+    // the picture of the ship in its texture (m_aShipTextures), the common one otherwise
+    int32_t GetShipUV(int32_t nPicIndex, int32_t nTextureNum, FRECT &rUV);
 
     int32_t GetShipClass(int32_t nCharIdx);
 
@@ -94,6 +103,13 @@ class BIShipIcon
     FRECT m_rShipSPUV;
     BIFPOINT m_pntShipSPOffset;
     FPOINT m_pntShipSPIconSize;
+    // the crew bar (none if its size is zero)
+    FRECT m_rShipCrewUV;
+    BIFPOINT m_pntShipCrewOffset;
+    FPOINT m_pntShipCrewIconSize;
+    // the empty track under every bar, the whole length (none if not set)
+    FRECT m_rShipStateBackUV;
+    bool m_bShipStateBack = false;
 
     int32_t m_nShipClassTextureID;
     int32_t m_nShipClassSquareQ;
@@ -110,6 +126,13 @@ class BIShipIcon
     BIFPOINT m_pntShipOffset;
     FPOINT m_pntShipIconSize;
     uint32_t m_dwShipNCols;
+    // Pirates of the Caribbean: the ship pictures in several textures, by the texture numbers of the scripts
+    struct ShipTexture
+    {
+        int32_t id = -1;
+        uint32_t cols = 1, rows = 1;
+    };
+    std::map<int32_t, ShipTexture> m_aShipTextures;
     uint32_t m_dwShipNRows;
 
     struct ShipDescr
@@ -120,14 +143,21 @@ class BIShipIcon
         ATTRIBUTES *pAShip;
         int32_t nMaxHP;
         int32_t nMaxSP;
+        int32_t nMaxCrew;
+        int32_t nTexture; // of m_aShipTextures, or -1 for m_nShipTextureID
         FRECT rUV;
         std::string sShipName;
         int32_t nShipClass;
     } m_Ship[MAX_SHIP_QUANTITY];
 
     int32_t m_nShipQuantity;
+    bool m_bCommandCharacterSet = false; // by a command being confirmed
     int32_t m_nCurrentShipIndex;
     int32_t m_nCommandListVerticalOffset;
+    // the command menu to the right of the icons row with this gap (Pirates of the Caribbean), -1: not used
+    int32_t m_nCommandListRightGap = -1;
+    // the state bars decrease to the left (Pirates of the Caribbean), not down
+    bool m_bHorizontalBars = false;
 
     int32_t m_idSailorFont;
     uint32_t m_dwSailorFontColor;

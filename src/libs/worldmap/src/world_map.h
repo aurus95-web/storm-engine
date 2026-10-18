@@ -52,6 +52,8 @@ class WorldMap : public Entity
     void Realize(uint32_t delta_time);
     // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
+    // Pirates of the Caribbean encounter messages: the encounter type comes first, model names follow
+    bool ProcessPotcEncounterMessage(int32_t code, MESSAGE &message, uint64_t &result);
     // Changing an attribute
     uint32_t AttributeChanged(ATTRIBUTES *apnt) override;
 

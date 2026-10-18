@@ -40,7 +40,9 @@ void Scene::ProcessStage(Stage stage, uint32_t delta)
             }
             else
             {
-                activeCamera_ = invalid_entity;
+                // the camera of a location over the sea (the boarding) is deleted: back to the previous one
+                activeCamera_ = core.GetEntityPointerSafe(previousCamera_) ? previousCamera_ : invalid_entity;
+                previousCamera_ = invalid_entity;
             }
         }
     }
@@ -52,6 +54,9 @@ Scene &Scene::SetActiveCamera(Camera *camera)
         activeCamera_ = invalid_entity;
     }
     else {
+        if (activeCamera_ != camera->GetId()) {
+            previousCamera_ = activeCamera_;
+        }
         activeCamera_ = camera->GetId();
     }
     return *this;

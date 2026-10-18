@@ -17,6 +17,7 @@ class ISPYGLASS : public Entity
         uint32_t dwColor;
         FRECT rUV;
         RECT rPos;
+        const char *pcTechnique = nullptr;
 
         ImageParam()
         {
@@ -172,6 +173,45 @@ class ISPYGLASS : public Entity
     float m_fInfoKeepDelay;
     float m_fMaxInfoKeepDelay;
 
+    // Pirates of the Caribbean has two objects: the telescope (TELESCOPE: zoom, lens, target ship) and the panel
+    // with the information about the target ship (ispyglass, filled by the scripts)
+    enum class PotcMode
+    {
+        none,
+        telescope,
+        panel
+    };
+    PotcMode m_PotcMode = PotcMode::none;
+    struct PotcPanel
+    {
+        BIImage *pBack = nullptr;
+        BIImage *pNation = nullptr;
+        BIImage *pHull = nullptr;
+        BIImage *pSail = nullptr;
+        BIImage *pCrew = nullptr;
+        BIImage *pSpeed = nullptr;
+        BIImage *pCannons = nullptr;
+        BIImage *pCharge = nullptr;
+        std::vector<FRECT> aNationUV;
+        std::vector<FRECT> aChargeUV;
+        int32_t nTextFont = -1;
+        float fTextScale = 1.f;
+        int32_t nTextLeft = 0, nNameTop = 0, nTypeTop = 0;
+        int32_t nDigitFont = -1;
+        float fDigitScale = 1.f;
+        int32_t nDigitTop = 0, nHullLeft = 0, nSailLeft = 0, nCrewLeft = 0, nSpeedLeft = 0, nCannonsLeft = 0;
+        std::string sName, sType, sHull, sSail, sCrew, sSpeed, sCannons;
+        float fFadeTime = .5f;
+        float fAlpha = 0.f;
+        bool bVisible = false;
+    } m_Potc;
+
+    void InitPotcPanel();
+    void ReleasePotcPanel();
+    void UpdatePotcPanel(const char *pcShipName, const char *pcShipType, int32_t nHull, int32_t nSail, int32_t nCrew,
+                         float fSpeed, int32_t nCannons, int32_t nCharge, int32_t nNation);
+    void SetPotcPanelAlpha(float fAlpha);
+
   protected:
     void Release();
     ATTRIBUTES *GetAttr(const char *pcAttrName) const;
@@ -188,4 +228,14 @@ class ISPYGLASS : public Entity
                           const char *pcFaceTexture, int32_t nShipClass);
     void FillUVArrayFromAttributes(std::vector<FRECT> &m_aUV, ATTRIBUTES *pA) const;
     VAI_OBJBASE *GetFort();
+};
+
+// Pirates of the Caribbean: the telescope without the ship information panel
+class TELESCOPE : public ISPYGLASS
+{
+  public:
+    TELESCOPE()
+    {
+        m_PotcMode = PotcMode::telescope;
+    }
 };

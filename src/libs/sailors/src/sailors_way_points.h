@@ -3,6 +3,7 @@
 #include "matrix.h"
 #include "dx9render.h"
 #include "math_inlines.h"
+#include "v_data.h"
 
 #include <string>
 #include <vector>
@@ -126,10 +127,8 @@ struct Points
 class SailorsPoints
 {
   private:
-    bool PointsPassed[MAX_POINTS];        // tmp mark of passed points (for finding a path)
     float matrix[MAX_POINTS][MAX_POINTS]; // Matrix for fast path finding
 
-    Path getPath(int src, int dst, int l); // Finding a way
 
   public:
     Points points;
@@ -142,6 +141,8 @@ class SailorsPoints
     Path findPath(Path &path, int from, int to); // Calculate the path
 
     void UpdateLinks(); // Refresh pathfinder matrix
+    // Pirates of the Caribbean: the walk points come from the scripts (sea_ai\\walk\\*_walk.c)
+    void ReadFromScript(int count, VDATA *verts, VDATA *graph, VDATA *types);
 
     int WriteToFile(std::string fileName);
     int ReadFromFile(std::string fileName);

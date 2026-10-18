@@ -429,7 +429,8 @@ uint32_t SUNGLOW::AttributeChanged(ATTRIBUTES *pAttribute)
             Glow.sMoonTexture = to_string(pAttribute->GetThisAttr());
             return 0;
         }
-        if (*pAttribute == "GlowTexture")
+        // Pirates of the Caribbean names it Texture
+        if (*pAttribute == "GlowTexture" || *pAttribute == "Texture")
         {
             Glow.sGlowTexture = to_string(pAttribute->GetThisAttr());
             return 0;

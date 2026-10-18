@@ -3,6 +3,7 @@
 #include "ship_camera.h"
 
 #include "math_inlines.h"
+#include "storm/port_options.hpp"
 
 #define SCMR_BOXSCALE_X 1.6f
 #define SCMR_BOXSCALE_Y 1.3f
@@ -72,14 +73,17 @@ void SHIP_CAMERA::Move(float fDeltaTime)
 
     CONTROL_STATE cs;
 
-    // Distance
+    // Distance (slower with the on-screen buttons of touch screens)
     auto fSensivityDistanceDlt = 0.0f;
+    const auto fZoomSensivity = core.Controls->IsTouchScreen()
+                                     ? fSensivityDistance * 0.1f * storm::GetPortOptionScale("zoom_speed")
+                                     : fSensivityDistance;
     core.Controls->GetControlState("ShipCamera_Forward", cs);
     if (cs.state == CST_ACTIVE || cs.state == CST_ACTIVATED)
-        fSensivityDistanceDlt -= fSensivityDistance;
+        fSensivityDistanceDlt -= fZoomSensivity;
     core.Controls->GetControlState("ShipCamera_Backward", cs);
     if (cs.state == CST_ACTIVE || cs.state == CST_ACTIVATED)
-        fSensivityDistanceDlt += fSensivityDistance;
+        fSensivityDistanceDlt += fZoomSensivity;
 
     auto fKInert = fDistanceInertia * fSpeed;
     if (fKInert < 0.0f)

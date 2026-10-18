@@ -198,15 +198,16 @@ bool AIFort::AddFort(ATTRIBUTES *pIslandAP, ATTRIBUTES *pFortLabelAP, ATTRIBUTES
     // pFort->pFortLabelAP = pFortLabelAP;
     aForts.push_back(pFort);
 
-    auto *pACannonsType1 = pFortCharacter->FindAClass(pFortCharacter, "Fort.Cannons.Type.1");
-    Assert(pACannonsType1);
-    auto *pACannonsType2 = pFortCharacter->FindAClass(pFortCharacter, "Fort.Cannons.Type.2");
-    Assert(pACannonsType2);
-    auto *pACannonsType3 = pFortCharacter->FindAClass(pFortCharacter, "Fort.Cannons.Type.3");
-    Assert(pACannonsType3);
-    pFort->dwCannonType = pACannonsType1->GetAttributeAsDword();
-    pFort->dwCulverinType = pACannonsType2->GetAttributeAsDword();
-    pFort->dwMortarType = pACannonsType3->GetAttributeAsDword();
+    // Pirates of the Caribbean forts have one cannon type, as ships (Ship.Cannons.Type)
+    const auto getCannonType = [pFortCharacter](const char *name) {
+        auto *pA = pFortCharacter->FindAClass(pFortCharacter, name);
+        if (!pA)
+            pA = pFortCharacter->FindAClass(pFortCharacter, "Ship.Cannons.Type");
+        return pA ? pA->GetAttributeAsDword() : static_cast<uint32_t>(-1);
+    };
+    pFort->dwCannonType = getCannonType("Fort.Cannons.Type.1");
+    pFort->dwCulverinType = getCannonType("Fort.Cannons.Type.2");
+    pFort->dwMortarType = getCannonType("Fort.Cannons.Type.3");
 
     pFort->mOldMatrix = pFort->GetModel()->mtx;
 
@@ -220,10 +221,12 @@ bool AIFort::AddFort(ATTRIBUTES *pIslandAP, ATTRIBUTES *pFortLabelAP, ATTRIBUTES
 
     const auto eidTmp = core.GetEntityId("shiplights");
     pShipsLights = static_cast<IShipLights *>(core.GetEntityPointer(eidTmp));
-    Assert(pShipsLights);
-
-    pShipsLights->AddLights(&pFort->tmpObject, pFort->GetModel(), bLights, bFlares);
-    pShipsLights->ProcessStage(Stage::execute, 0);
+    // Pirates of the Caribbean scripts create no ship lights
+    if (pShipsLights)
+    {
+        pShipsLights->AddLights(&pFort->tmpObject, pFort->GetModel(), bLights, bFlares);
+        pShipsLights->ProcessStage(Stage::execute, 0);
+    }
 
     core.Event(FORT_CREATE, "al", pFortCharacter, pFort->GetAllCannonsNum());
 
@@ -553,6 +556,8 @@ void AIFort::AI_FORT::Load(CSaveLoad *pSL, entid_t eid)
 
 void AIFort::Fire(const CVECTOR &vPos)
 {
+    if (!pShipsLights) // Pirates of the Caribbean scripts create no ship lights
+        return;
     for (auto &aFort : aForts)
         pShipsLights->AddDynamicLights(&aFort->tmpObject, vPos);
 }

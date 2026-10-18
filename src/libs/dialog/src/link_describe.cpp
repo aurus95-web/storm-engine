@@ -277,6 +277,29 @@ bool DlgLinkDescribe::CanMoveUp() const noexcept
     return selectedLine_ > 0;
 }
 
+int32_t DlgLinkDescribe::GetLinkAt(int32_t y) const noexcept
+{
+    if (lineHeight_ <= 0 || y < offset_.y)
+        return -1;
+    const auto line = (y - offset_.y) / lineHeight_;
+    const auto n = startIndex_ + line;
+    if (line >= maxLinesPerPage_ || n >= static_cast<int32_t>(textLines_.size()))
+        return -1;
+    for (size_t link = 0; link < lineBreaks_.size(); link++)
+    {
+        if (n < lineBreaks_[link])
+            return static_cast<int32_t>(link);
+    }
+    return -1;
+}
+
+DlgLinkDescribe &DlgLinkDescribe::Select(int32_t link)
+{
+    if (link >= 0 && link < static_cast<int32_t>(lineBreaks_.size()))
+        selectedLine_ = link;
+    return *this;
+}
+
 DlgLinkDescribe &DlgLinkDescribe::MoveUp()
 {
     if (CanMoveUp()) {

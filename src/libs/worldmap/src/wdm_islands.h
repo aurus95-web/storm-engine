@@ -136,7 +136,7 @@ class WdmIslands : public WdmRenderObject
     // Model containing all locators
     WdmRenderModel *baseModel;
     // Pathfinder patch
-    PtcData *patch;
+    PtcData *patch = nullptr;
     // Island models
     std::vector<Islands> islands;
     // Labels
@@ -151,6 +151,18 @@ class WdmIslands : public WdmRenderObject
     std::vector<CVECTOR> merchants;
     // Destination Points of Quest Encounters
     std::vector<Quest> quests;
+
+    // Pirates of the Caribbean: all the islands are one model, the zones come from worldMap.islands
+    struct PotcIslandZone
+    {
+        std::string id;
+        float x, z, radius;
+        float kradius; // the island icon is shown closer to the island than the zone radius
+    };
+    std::vector<PotcIslandZone> potcZones;
+    std::string potcCurrentZone;
+    bool isPotc = false;
+    void UpdatePotcZones();
 
     // Input table for finding labels
     int32_t labelsEntry[1024];

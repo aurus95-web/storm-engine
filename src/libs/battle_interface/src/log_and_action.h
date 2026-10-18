@@ -73,11 +73,14 @@ class ILogAndActions : public Entity
     int32_t m_nIconHeight; // Y icon size
     int32_t m_nIconLeft;
     int32_t m_nIconUp;
+    int32_t m_nTouchLogShift = 0; // the log moved to the right of the icon made larger for touch screens
+    int32_t ScaleIconForTouch();
     int32_t m_idIconTexture;
     int32_t m_horzDiv;
     int32_t m_vertDiv;
     BI_ONETEXTURE_VERTEX m_IconVertex[4];
     char m_sActionName[64];
+    std::string m_sSuspendedAction; // the reload replaced by another action, back after it
     char m_sOldActionName[64];
 
     bool m_bShowActiveCommand;

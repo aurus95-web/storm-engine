@@ -3,10 +3,53 @@
 
 #include "string_compare.hpp"
 
+#include <mutex>
+#include <unordered_set>
+
+#ifndef _WIN32
+namespace
+{
+// never destroyed: the attributes of the static objects are deleted after it
+std::unordered_set<const ATTRIBUTES *> &LiveAttributes()
+{
+    static auto *live = new std::unordered_set<const ATTRIBUTES *>;
+    return *live;
+}
+
+std::mutex &LiveAttributesMutex()
+{
+    static auto *mutex = new std::mutex;
+    return *mutex;
+}
+
+void SetAlive(const ATTRIBUTES *attributes, bool alive)
+{
+    std::lock_guard lock(LiveAttributesMutex());
+    if (alive)
+        LiveAttributes().insert(attributes);
+    else
+        LiveAttributes().erase(attributes);
+}
+} // namespace
+#endif
+
+bool ATTRIBUTES::IsAlive(const ATTRIBUTES *attributes)
+{
+#ifndef _WIN32
+    std::lock_guard lock(LiveAttributesMutex());
+    return LiveAttributes().count(attributes) != 0;
+#else
+    return true;
+#endif
+}
+
 ATTRIBUTES::ATTRIBUTES(ATTRIBUTES &&other) noexcept
     : stringCodec_(other.stringCodec_), nameCode_(other.stringCodec_.Convert("root")), value_(std::move(other.value_)),
       attributes_(std::move(other.attributes_)), break_(other.break_)
 {
+#ifndef _WIN32
+    SetAlive(this, true);
+#endif
 }
 
 ATTRIBUTES & ATTRIBUTES::operator=(ATTRIBUTES &&other) noexcept
@@ -28,6 +71,9 @@ ATTRIBUTES & ATTRIBUTES::operator=(ATTRIBUTES &&other) noexcept
 
 ATTRIBUTES::~ATTRIBUTES()
 {
+#ifndef _WIN32
+    SetAlive(this, false);
+#endif
     if (break_)
         stringCodec_.VariableChanged();
 }
@@ -466,6 +512,9 @@ ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC &string_codec, ATTRIBUTES *parent, const st
 ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC &string_codec, ATTRIBUTES *parent, const uint32_t name_code)
     : stringCodec_(string_codec), nameCode_(name_code), parent_(parent)
 {
+#ifndef _WIN32
+    SetAlive(this, true);
+#endif
 }
 
 ATTRIBUTES ATTRIBUTES::Copy() const

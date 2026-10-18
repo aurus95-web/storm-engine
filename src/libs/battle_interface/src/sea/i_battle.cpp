@@ -37,6 +37,8 @@ CREATE_CLASS(BATTLE_LAND_INTERFACE)
 
 CREATE_CLASS(ISPYGLASS)
 
+CREATE_CLASS(TELESCOPE)
+
 CREATE_CLASS(SHIPPOINTER)
 
 CREATE_CLASS(ActivePerkShower)
@@ -116,8 +118,15 @@ void BATTLE_INTERFACE::Execute(uint32_t delta_time)
                 BattleNavigator.IncrementScale();
         }
 
-        if (m_bShowCommandMenu && m_pShipIcon)
+        if (m_bShowCommandMenu && m_pShipIcon && core.Controls->IsTouchScreen() &&
+            !core.Controls->IsGamepadActive() &&
+            core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
         {
+            m_pShipIcon->TouchControl();
+        }
+        else if (m_bShowCommandMenu && m_pShipIcon)
+        {
+            m_pShipIcon->LeaveTouchMode();
             if (!m_pShipIcon->IsActive())
             {
                 core.Controls->GetControlState(BI_COMMANDS_ACTIVATE_SEA, cs);
@@ -229,8 +238,13 @@ void BATTLE_INTERFACE::LoadIniFile()
     STORM_DELETE(m_pShipIcon);
     m_pShipIcon = new BIShipIcon(GetId(), rs);
     Assert(m_pShipIcon);
-    m_pShipIcon->Init(AttributesPointer,
-                      AttributesPointer ? AttributesPointer->GetAttributeClass("ShipIcon") : nullptr);
+    // Pirates of the Caribbean: converted every time, the saved games keep the attributes of older versions
+    ATTRIBUTES *pShipIconA = nullptr;
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        pShipIconA = ConvertPotcParameters();
+    if (!pShipIconA && AttributesPointer)
+        pShipIconA = AttributesPointer->GetAttributeClass("ShipIcon");
+    m_pShipIcon->Init(AttributesPointer, pShipIconA);
 
     m_pShipInfoImages =
         new ShipInfoImages(rs, AttributesPointer ? AttributesPointer->GetAttributeClass("ShipInfoImages") : nullptr);
@@ -239,6 +253,122 @@ void BATTLE_INTERFACE::LoadIniFile()
         m_pShipInfoImages->SetVisible(
             AttributesPointer ? (AttributesPointer->GetAttributeAsDword("ShifInfoVisible", 0) != 0) : false);
     }
+}
+
+// Pirates of the Caribbean: "CommandShowParam" (ship icons and command menu) is converted to "ShipIcon" and
+// "CommandList"; the scripts set it before creating the entity and delete it right after
+ATTRIBUTES *BATTLE_INTERFACE::ConvertPotcParameters()
+{
+    auto *const pShow = AttributesPointer ? AttributesPointer->GetAttributeClass("CommandShowParam") : nullptr;
+    if (!pShow)
+        return nullptr;
+    const auto set = [](ATTRIBUTES &a, const char *name, const std::string &value) {
+        a.SetAttribute(name, value.c_str());
+    };
+    // the values are read with atol: signed, as the scripts write them
+    const auto setInt = [](ATTRIBUTES &a, const char *name, uint32_t value) {
+        a.SetAttribute(name, std::to_string(static_cast<int32_t>(value)).c_str());
+    };
+    const auto scriptHeight = static_cast<int32_t>(pShow->GetAttributeAsDword("iconHeight", 64));
+    // touch screens: the ships and the commands as large as the on-screen buttons
+    int32_t screenHeight;
+    const auto k = BIUtils::GetTouchIconScale(scriptHeight, screenHeight);
+    const auto sc = [k](int32_t v) { return static_cast<int32_t>(std::lround(v * k)); };
+    const auto width = sc(static_cast<int32_t>(pShow->GetAttributeAsDword("iconWidth", 64)));
+    const auto height = sc(scriptHeight);
+    const auto left = sc(static_cast<int32_t>(pShow->GetAttributeAsDword("leftIconsOffset", 16)));
+    auto top = static_cast<int32_t>(pShow->GetAttributeAsDword("downIconsOffset", 520));
+    if (screenHeight > 0) // the same gap below them, larger
+        top = screenHeight - sc(screenHeight - top - scriptHeight) - height;
+    const auto distance = sc(static_cast<int32_t>(pShow->GetAttributeAsDword("iconDistance", 4)));
+    const auto stateWidth = pShow->GetAttribute("shipStateWidth") ? sc(pShow->GetAttributeAsDword("shipStateWidth", 64)) : width;
+    // touch screens: thinner bars under the larger icons
+    const auto stateHeight = static_cast<int32_t>(
+        std::lround(sc(static_cast<int32_t>(pShow->GetAttributeAsDword("shipStateHeight", 16))) * (k > 1.f ? 0.6f : 1.f)));
+
+    // replaces the attributes of the older versions kept in the saved games
+    if (auto *old = AttributesPointer->GetAttributeClass("ShipIcon"))
+        AttributesPointer->DeleteAttributeClassX(old);
+    auto &icon = AttributesPointer->CreateAttribute("ShipIcon");
+    // the ships in a row, the sails (white), crew (blue) and hull (red) bars of indicators.tga above them
+    for (int32_t n = 0; n < 8; n++)
+        set(icon, ("iconoffset" + std::to_string(n + 1)).c_str(),
+            std::to_string(left + n * (width + distance) + width / 2) + "," + std::to_string(top + height / 2));
+    // the ship pictures are in the textures of the commands (most ships in t2, the galleons and some others in their own
+    // ones), the selected pictures are to the right of their grids
+    if (auto *pList = AttributesPointer->FindAClass(AttributesPointer, "CommandTextures.list"))
+    {
+        auto &textures = icon.CreateAttribute("ShipTextures");
+        for (size_t i = 0; i < pList->GetAttributesNum(); i++)
+        {
+            auto *pT = pList->GetAttributeClass(i);
+            if (!pT || !pT->GetAttribute("name"))
+                continue;
+            auto &t = textures.CreateAttribute(pT->GetThisName());
+            set(t, "name", pT->GetAttribute("name"));
+            setInt(t, "xsize", pT->GetAttributeAsDword("xsize", 1) * 2);
+            setInt(t, "ysize", pT->GetAttributeAsDword("ysize", 1));
+        }
+    }
+    auto *pTexture = AttributesPointer->FindAClass(AttributesPointer, "CommandTextures.list.t2");
+    if (pTexture && pTexture->GetAttribute("name"))
+    {
+        set(icon, "shiptexturename", pTexture->GetAttribute("name"));
+        setInt(icon, "xsize", pTexture->GetAttributeAsDword("xsize", 1) * 2);
+        setInt(icon, "ysize", pTexture->GetAttributeAsDword("ysize", 1));
+    }
+    set(icon, "shipiconsize", std::to_string(width) + "," + std::to_string(height));
+    setInt(icon, "shipcolor", ARGB(255, 128, 128, 128));
+    if (const char *texture = pShow->GetAttribute("shipStateTexture"))
+        set(icon, "shipstatetexturename", texture);
+    setInt(icon, "shipstatecolor", ARGB(255, 128, 128, 128));
+    const auto barSize = std::to_string(stateWidth) + "," + std::to_string(stateHeight);
+    set(icon, "shiphpuv", "0.0,0.333,1.0,0.5");
+    // from the top: the sails (white), the crew (blue), the hull (red)
+    set(icon, "shiphpoffset", "0," + std::to_string(-height / 2 - stateHeight / 2));
+    set(icon, "shiphpiconsize", barSize);
+    set(icon, "shipspuv", "0.0,0.0,1.0,0.167");
+    set(icon, "shipspoffset", "0," + std::to_string(-height / 2 - stateHeight * 5 / 2));
+    set(icon, "shipspiconsize", barSize);
+    set(icon, "shipcrewuv", "0.0,0.167,1.0,0.333");
+    // the dark empty track under every bar
+    set(icon, "shipstatebackuv", "0.0,0.5,1.0,0.667");
+    set(icon, "shipcrewoffset", "0," + std::to_string(-height / 2 - stateHeight * 3 / 2));
+    set(icon, "shipcrewiconsize", barSize);
+    // no back and ship class icons: they are drawn untextured otherwise
+    set(icon, "backiconsize", "0,0");
+    set(icon, "shipclassiconsize", "0,0");
+    // no crew quantity and ship name: the icon prints them always, out of the screen
+    set(icon, "sailorfontoffset", "0,-10000");
+    set(icon, "shipnamefontoffset", "0,-10000");
+    // the command menu is to the right of the ships row
+    setInt(icon, "commandlistverticaloffset", static_cast<uint32_t>(-height / 2));
+    setInt(icon, "commandlistrightgap", distance + 4);
+    setInt(icon, "horizontalbars", 1);
+
+    // replaces the attributes of the older versions kept in the saved games
+    if (auto *old = AttributesPointer->GetAttributeClass("CommandList"))
+        AttributesPointer->DeleteAttributeClassX(old);
+    auto &list = AttributesPointer->CreateAttribute("CommandList");
+    setInt(list, "CommandIconLeft", left + width + distance + 4);
+    setInt(list, "CommandIconWidth", width);
+    setInt(list, "CommandIconHeight", height);
+    setInt(list, "CommandIconSpace", distance);
+    BIUtils::SetPotcCommandArrows(list, static_cast<int32_t>(pShow->GetAttributeAsDword("maxShowQuantity", 5)), width,
+                                  height, distance);
+    // the state bars of the ships among the commands (as above the own ships)
+    if (const char *texture = pShow->GetAttribute("shipStateTexture"))
+        set(list, "ShipStateTexture", texture);
+    if (const char *font = pShow->GetAttribute("commandNoteFont"))
+        set(list, "CommandNoteFont", font);
+    // PotC counts the note offset from the top of the icon, the engine from its centre
+    set(list, "CommandNoteOffset",
+        std::to_string(sc(static_cast<int32_t>(pShow->GetAttributeAsDword("noteXOffset", 0)))) + "," +
+            std::to_string(sc(static_cast<int32_t>(pShow->GetAttributeAsDword("noteYOffset", -30)) - 34) -
+                           height / 2)); // and above the nation flags of the ships
+    setInt(list, "CommandNoteColor", ARGB(255, 255, 255, 255));
+
+    return &icon;
 }
 
 uint32_t BATTLE_INTERFACE::AttributeChanged(ATTRIBUTES *pAttr)
@@ -287,6 +417,10 @@ uint64_t BATTLE_INTERFACE::ProcessMessage(MESSAGE &message)
         auto startPictureNumber = message.Long();
         auto characterNum = message.Long();
         auto commandState = message.Long();
+        // Pirates of the Caribbean: the commands of a companion chosen with the companion command
+        if (m_pShipIcon && comMode == BI_COMMODE_COMMAND_SELECT && characterNum >= 0 &&
+            core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+            m_pShipIcon->SetCommandCharacter(characterNum);
     }
     break;
     case BI_SET_VISIBLE: // "ll"

@@ -41,8 +41,9 @@ class FirePlace
     }
 
     void Execute(float fDeltaTime);
+    // _iSoundID: the sound played by the scripts instead of pSoundName (Pirates of the Caribbean), stopped with the fire
     void Run(const char *pParticleSmokeName, const char *pParticleFireName, int32_t _iBallCharacterIndex,
-             const char *pSoundName, float _fRunTime);
+             const char *pSoundName, float _fRunTime, int32_t _iSoundID = 0);
     void Stop();
     void StopSound(int32_t _iSoundID);
 

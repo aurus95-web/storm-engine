@@ -5,6 +5,7 @@
 #include "island_descr.h"
 #include "shared/battle_interface/msg_control.h"
 #include "ships_list.h"
+#include "string_compare.hpp"
 
 BIShipCommandList::BIShipCommandList(entid_t eid, ATTRIBUTES *pA, VDX9RENDER *rs) : BICommandList(eid, pA, rs)
 {
@@ -98,7 +99,9 @@ void BIShipCommandList::FillIcons()
         fill([this](const uint32_t current_cmd) { return (m_nCurrentCommandMode & current_cmd) != 0; });
     }
     
-    nIconsQuantity += AddCancelIcon();
+    // on touch screens the commands are always shown, there is nothing to cancel at their top level
+    if (!m_bTouchMode || m_nCurrentCommandMode != BI_COMMODE_COMMAND_SELECT)
+        nIconsQuantity += AddCancelIcon();
 }
 
 void BIShipCommandList::Init()
@@ -172,6 +175,7 @@ int32_t BIShipCommandList::ShipAdding(bool allLabel, bool bMyShip, bool bEnemy, 
         if (n > 0)
         {
             retVal += n;
+            AddStateToIcon(main_sd);
             AddFlagPictureToIcon(main_sd->characterIndex);
         }
     }
@@ -204,6 +208,7 @@ int32_t BIShipCommandList::ShipAdding(bool allLabel, bool bMyShip, bool bEnemy, 
                 if (n > 0)
                 {
                     retVal += n;
+                    AddStateToIcon(sd);
                     AddFlagPictureToIcon(sd->characterIndex);
                 }
             }
@@ -337,6 +342,9 @@ int32_t BIShipCommandList::CommandAdding()
         const int32_t cooldownPictureNum = pA->GetAttributeAsDword("cooldownPicNum", -1);
         const int32_t texNum = pA->GetAttributeAsDword("texNum", m_nCommandTextureNum);
         const char *eventName = pA->GetAttribute("event");
+        // on touch screens the charges are buttons of their own
+        if (m_bTouchMode && eventName && storm::iEquals(eventName, "BI_Charge"))
+            continue;
         retVal += AddToIconList(texNum, pictureNum, selPictureNum, cooldownPictureNum, -1, eventName, -1, nullptr,
                                 pA->GetAttribute("note"));
     }
@@ -506,9 +514,47 @@ int32_t BIShipCommandList::TownAdding(bool allLabel, bool bDiseased, bool bNotDi
     return retVal;
 }
 
+// the state of the ship above its icon: the own ships, the others if the spyglass shows it (the scripts are asked)
+void BIShipCommandList::AddStateToIcon(const SHIP_DESCRIBE_LIST::SHIP_DESCR *pSD)
+{
+    if (!pSD || !pSD->pAttr)
+        return;
+    if (!pSD->isMyShip)
+    {
+        auto *pvdat = core.Event(BI_EVENT_CHECK_SHIPSTATE_SHOW, "l", pSD->characterIndex);
+        if (!pvdat || pvdat->GetInt() == 0)
+            return;
+    }
+    const auto ratio = [](float value, int32_t max) { return max > 0 ? value / max : 1.f; };
+    auto *pCrew = pSD->pAttr->GetAttributeClass("Crew");
+    SetStateToIcon(ratio(pSD->pAttr->GetAttributeAsFloat("SP", 0.f), pSD->maxSP),
+                   ratio(pCrew ? pCrew->GetAttributeAsFloat("quantity", 0.f) : 0.f, pSD->maxCrew),
+                   ratio(pSD->pAttr->GetAttributeAsFloat("HP", 0.f), pSD->maxHP));
+}
+
 void BIShipCommandList::AddFlagPictureToIcon(int32_t nCharIdx)
 {
     auto *pvdat = core.Event("evntGetSmallFlagData", "l", nCharIdx);
+    if (!pvdat && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        // Pirates of the Caribbean: texture and picture of the relation (none for the neutrals),
+        // texture and picture of the nation flag
+        pvdat = core.Event(BI_EVENT_GET_DATA, "ll", BIDT_GERALD_DATA, nCharIdx);
+        if (!pvdat || !pvdat->IsArray())
+            return;
+        int32_t nRelTex, nRelPic, nTex, nPic;
+        pvdat->Get(nRelTex, 0);
+        pvdat->Get(nRelPic, 1);
+        pvdat->Get(nTex, 2);
+        pvdat->Get(nPic, 3);
+        // above the ship picture, half of its size
+        const auto size = static_cast<float>(m_IconSize.y) * 0.5f;
+        const auto top = -static_cast<float>(m_IconSize.y) - GetIconStateHeight() - 2.f - size;
+        if (nRelPic >= 0)
+            AddAdditiveToIconList(nRelTex, nRelPic, top, size, size);
+        AddAdditiveToIconList(nTex, nPic, nRelPic >= 0 ? -size : top, size, size);
+        return;
+    }
     if (!pvdat)
         return;
     int32_t nTex, nPic, nBackPic;

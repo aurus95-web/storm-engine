@@ -1643,6 +1643,9 @@ bool DATA::Plus(DATA *pV)
         case VAR_INTEGER:
             lValue = lValue + pV->lValue;
             break;
+        case VAR_PTR: // the result of SendMessage
+            lValue = lValue + static_cast<int32_t>(pV->pValue);
+            break;
         case VAR_FLOAT:
             Convert(VAR_FLOAT);
             fValue = fValue + pV->fValue;
@@ -1728,6 +1731,9 @@ bool DATA::Minus(DATA *pV)
         {
         case VAR_INTEGER:
             lValue = lValue - pV->lValue;
+            break;
+        case VAR_PTR: // the result of SendMessage
+            lValue = lValue - static_cast<int32_t>(pV->pValue);
             break;
         case VAR_FLOAT:
             Convert(VAR_FLOAT);

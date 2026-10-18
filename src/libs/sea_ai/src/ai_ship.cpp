@@ -52,7 +52,11 @@ void AIShip::SetSeaAIAttributes(ATTRIBUTES *pAAttr, VAI_INNEROBJ *pObj) const
     pAAttr = pAAttr->CreateAttribute(str, "");
 
     // set common attributes
-    pAAttr->SetAttributeUseDword("relation", Helper.GetRelationSafe(GetACharacter(), pObj->GetACharacter()));
+    auto relation = Helper.GetRelationSafe(GetACharacter(), pObj->GetACharacter());
+    // Pirates of the Caribbean: friend 0, neutral 1, enemy 2 (later: 1, 2, 3)
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        relation--;
+    pAAttr->SetAttributeUseDword("relation", relation);
     pAAttr->SetAttributeUseDword("idx", GetIndex(pObj->GetACharacter()));
     // pAAttr->SetAttributeUseFloat("x", pObj->GetPos().x);
     // pAAttr->SetAttributeUseFloat("y", pObj->GetPos().y);

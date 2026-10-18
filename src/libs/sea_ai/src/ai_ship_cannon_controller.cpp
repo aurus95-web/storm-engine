@@ -243,10 +243,10 @@ void AIShipCannonController::Execute(float fDeltaTime)
             // if (GetAIShip()->isMainCharacter())
             {
                 ATTRIBUTES *pAPlayer = GetAIShip()->GetACharacter();
-                ATTRIBUTES *pABorts = pAPlayer->FindAClass(pAPlayer, "Ship.Cannons.Borts");
+                ATTRIBUTES *pABorts = pAPlayer->CreateSubAClass(pAPlayer, "Ship.Cannons.Borts");
                 Assert(pABorts);
                 pABorts->SetAttribute(bort.sName.c_str(), "");
-                ATTRIBUTES *pACurBort = pABorts->FindAClass(pABorts, bort.sName.c_str());
+                ATTRIBUTES *pACurBort = pABorts->CreateSubAClass(pABorts, bort.sName.c_str());
                 Assert(pACurBort);
 
                 pACurBort->SetAttributeUseFloat("MaxFireDistance", bort.fMaxFireDistance);
@@ -690,7 +690,7 @@ bool AIShipCannonController::Init(ATTRIBUTES *_pAShip)
     pAShip = _pAShip;
 
     ATTRIBUTES *pACharacter = GetAIShip()->GetACharacter();
-    ATTRIBUTES *pABorts = pACharacter->FindAClass(pACharacter, "Ship.Cannons.Borts");
+    ATTRIBUTES *pABorts = pACharacter->CreateSubAClass(pACharacter, "Ship.Cannons.Borts");
     Assert(pABorts);
 
     // init borts from ShipsTypes attributes
@@ -730,7 +730,7 @@ bool AIShipCannonController::ScanShipForCannons()
 {
 
     ATTRIBUTES *pACharacter = GetAIShip()->GetACharacter();
-    ATTRIBUTES *pABorts = pACharacter->FindAClass(pACharacter, "Ship.Cannons.Borts");
+    ATTRIBUTES *pABorts = pACharacter->CreateSubAClass(pACharacter, "Ship.Cannons.Borts");
     Assert(pABorts);
     MODEL *pModel = GetAIShip()->GetModel();
     Assert(pModel);
@@ -759,7 +759,7 @@ bool AIShipCannonController::ScanShipForCannons()
 
                     char buf[512];
                     sprintf_s(buf, "%s.damages", label.group_name);
-                    ATTRIBUTES *pADamages = pABorts->FindAClass(pABorts, buf);
+                    ATTRIBUTES *pADamages = pABorts->CreateSubAClass(pABorts, buf);
                     sprintf_s(buf, "c%zd", bort.aCannons.size() - 1);
                     const float fDamage = pADamages->GetAttributeAsFloat(buf, 0.0f);
                     pADamages->SetAttributeUseFloat(buf, fDamage);
@@ -857,15 +857,15 @@ void AIShipCannonController::CheckCannonsBoom(float fTmpCannonDamage, const CVEC
     char str[512];
 
     ATTRIBUTES *pACharacter = GetAIShip()->GetACharacter();
-    ATTRIBUTES *pABorts = pACharacter->FindAClass(pACharacter, "Ship.Cannons.Borts");
+    ATTRIBUTES *pABorts = pACharacter->CreateSubAClass(pACharacter, "Ship.Cannons.Borts");
     Assert(pABorts);
 
     for (auto &bort : aShipBorts)
     {
         sprintf_s(str, "%s.damages", bort.sName.c_str());
-        ATTRIBUTES *pADamages = pABorts->FindAClass(pABorts, str);
+        ATTRIBUTES *pADamages = pABorts->CreateSubAClass(pABorts, str);
         Assert(pADamages);
-        ATTRIBUTES *pACurBort = pABorts->FindAClass(pABorts, bort.sName.c_str());
+        ATTRIBUTES *pACurBort = pABorts->CreateSubAClass(pABorts, bort.sName.c_str());
         Assert(pACurBort);
 
         for (uint32_t j = 0; j < bort.aCannons.size(); j++)
@@ -907,7 +907,7 @@ void AIShipCannonController::ResearchCannons()
     char str[512];
 
     ATTRIBUTES *pACharacter = GetAIShip()->GetACharacter();
-    ATTRIBUTES *pABorts = pACharacter->FindAClass(pACharacter, "Ship.Cannons.Borts");
+    ATTRIBUTES *pABorts = pACharacter->CreateSubAClass(pACharacter, "Ship.Cannons.Borts");
     Assert(pABorts);
 
     for (auto &aShipBort : aShipBorts)
@@ -915,9 +915,9 @@ void AIShipCannonController::ResearchCannons()
         AISHIP_BORT *pBort = &aShipBort;
 
         sprintf_s(str, "%s.damages", aShipBort.sName.c_str());
-        ATTRIBUTES *pADamages = pABorts->FindAClass(pABorts, str);
+        ATTRIBUTES *pADamages = pABorts->CreateSubAClass(pABorts, str);
         Assert(pADamages);
-        ATTRIBUTES *pACurBort = pABorts->FindAClass(pABorts, aShipBort.sName.c_str());
+        ATTRIBUTES *pACurBort = pABorts->CreateSubAClass(pABorts, aShipBort.sName.c_str());
         Assert(pACurBort);
         aShipBort.dwNumDamagedCannons = 0; // not used anywhere, maybe a rudiment?
 

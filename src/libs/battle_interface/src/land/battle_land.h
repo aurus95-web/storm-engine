@@ -4,6 +4,7 @@
 #include "bi_defines.h"
 
 class BIManSign;
+class MESSAGE_ICONS;
 
 class BATTLE_LAND_INTERFACE : public Entity
 {
@@ -35,6 +36,8 @@ class BATTLE_LAND_INTERFACE : public Entity
 
   protected:
     void SetShowParameters();
+    ATTRIBUTES *ConvertPotcParameters();
+    void AddPotcCommandTextures();
     void SetParameters();
     void UpdateCommandos() const;
     void UpdateAlarm();
@@ -50,6 +53,14 @@ class BATTLE_LAND_INTERFACE : public Entity
     bool m_bShowCommandos;
 
     BIManSign *m_pManSign;
+    // the icons above the portraits (the level up...): Pirates of the Caribbean
+    MESSAGE_ICONS *m_pMessageIcons = nullptr;
+    uint32_t m_nMessageIconsRequestTime = 0;
+    int32_t m_aMessageIconLeft[4]{};
+    ATTRIBUTES *m_aMessageIconAttr[4]{};
+    int32_t m_nMessageIconBottom = -1, m_nMessageIconWidth = 0;
+    // Pirates of the Caribbean: the command textures are set after the entity is created
+    bool m_bPotcCommandTexturesAdded = false;
 
     std::vector<BITextInfo> m_TextInfo;
 

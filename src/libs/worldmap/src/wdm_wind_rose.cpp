@@ -9,6 +9,7 @@
 //============================================================================================
 
 #include "wdm_wind_rose.h"
+#include "core.h"
 
 // ============================================================================================
 // Construction, destruction
@@ -51,6 +52,9 @@ void WdmWindRose::LRender(VDX9RENDER *rs)
     // prj.BuildProjectionMatrix(0.1f, scrw, scrh, 0.5f, 50.0f);
     prj.BuildProjectionMatrix(0.1f, 4.0f, 3.0f, 0.5f, 50.0f);
     rs->SetTransform(D3DTS_PROJECTION, prj);
+    // Pirates of the Caribbean: the labels of the islands are drawn before with a depth, they showed through
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        rs->Clear(0, nullptr, D3DCLEAR_ZBUFFER, 0, 1.0f, 0);
     WdmRenderModel::LRender(rs);
     Vertex v[4];
     const auto size = 5.5f;

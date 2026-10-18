@@ -11,6 +11,9 @@
 #include "wdm_ship.h"
 #include "wdm_islands.h"
 
+#include "core.h"
+#include "storm/port_options.hpp"
+
 //============================================================================================
 
 #define WDM_SHIP_MAXDTIME 0.1f   // The largest allowed time period for calculations
@@ -127,15 +130,20 @@ void WdmShip::ShipUpdate(float dltTime)
         speed = WDM_SHIP_MAX_SPEED * kMaxSpeed;
     if (speed < -0.4f * WDM_SHIP_MAX_SPEED * kMaxSpeed)
         speed = -0.4f * WDM_SHIP_MAX_SPEED * kMaxSpeed;
-    if (turnspd > WDM_SHIP_MAX_TURNSPD)
-        turnspd = WDM_SHIP_MAX_TURNSPD;
-    if (turnspd < -WDM_SHIP_MAX_TURNSPD)
-        turnspd = -WDM_SHIP_MAX_TURNSPD;
+    if (turnspd > maxTurnSpd)
+        turnspd = maxTurnSpd;
+    if (turnspd < -maxTurnSpd)
+        turnspd = -maxTurnSpd;
     // swing
     ax += dltAx * dltTime;
     az += dltAz * dltTime;
+    // Pirates of the Caribbean: the ships are faster and turn faster than in the original game (engine.ini [touch]
+    // map_ship_speed, map_ship_turn in percent)
+    static const auto isPotc = core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN;
+    const auto kSpeed = isPotc ? storm::GetPortOption("map_ship_speed", 120) * 0.01f : 1.f;
+    const auto kTurn = isPotc ? storm::GetPortOption("map_ship_turn", 125) * 0.01f : 1.f;
     // Turning
-    ay += turnspd * dltTime;
+    ay += turnspd * kTurn * dltTime;
     // Limiting the angles
     if (ax > pi2)
         ax -= pi2;
@@ -157,7 +165,7 @@ void WdmShip::ShipUpdate(float dltTime)
         wdmObjects->shipSpeedOppositeWind + (wdmObjects->shipSpeedOverWind - wdmObjects->shipSpeedOppositeWind) * kWind;
     // Find a new position
     CVECTOR pos = mtx.Pos();
-    const float dltMove = speed * kWind * dltTime;
+    const float dltMove = speed * kWind * kSpeed * dltTime;
     pos += mtx.Vz() * dltMove + rspeed * dltTime;
     baseV -= dltMove * 0.04f;
     if (baseV < -1.0f)

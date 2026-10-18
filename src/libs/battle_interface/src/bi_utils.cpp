@@ -2,6 +2,7 @@
 
 #include "core.h"
 #include "string_compare.hpp"
+#include "storm/port_options.hpp"
 
 #include "image/img_render.h"
 #include "vma.hpp"
@@ -15,6 +16,34 @@ int32_t BIUtils::GetIntFromAttr(ATTRIBUTES *pA, const char *name, int32_t defVal
     if (pA == nullptr || name == nullptr)
         return defVal;
     return pA->GetAttributeAsDword(name, defVal);
+}
+
+float BIUtils::GetTouchIconScale(int32_t iconHeight, int32_t &screenHeight)
+{
+    screenHeight = 0;
+    auto *rs = static_cast<VDX9RENDER *>(core.GetService("dx9render"));
+    if (!rs || iconHeight <= 0 || !core.Controls->IsTouchScreen())
+        return 1.f;
+    D3DVIEWPORT9 vp;
+    rs->GetViewport(&vp);
+    screenHeight = static_cast<int32_t>(vp.Height);
+    // the size of the touch buttons (the options of the game)
+    return vp.Height * 0.1f * storm::GetPortOptionScale("button_scale") / iconHeight;
+}
+
+void BIUtils::SetPotcCommandArrows(ATTRIBUTES &list, int32_t maxShow, int32_t iconWidth, int32_t iconHeight,
+                                   int32_t space)
+{
+    // interfaces\touch_lr_arrows.tga of tools/touch-icons: the left arrow in the left half, the right one in the right
+    const auto width = iconHeight / 2;
+    const auto x = maxShow * (iconWidth + space);
+    list.SetAttributeUseDword("CommandMaxIconQuantity", maxShow);
+    list.SetAttribute("LRArrow_Texture", "interfaces\\touch_lr_arrows.tga");
+    list.SetAttribute("LRArrow_UV_Left", "0,0,0.5,1");
+    list.SetAttribute("LRArrow_UV_Right", "0.5,0,1,1");
+    list.SetAttribute("LRArrow_Size", (std::to_string(width) + "," + std::to_string(iconHeight)).c_str());
+    list.SetAttribute("LRArrow_Offset_Left", (std::to_string(x) + ",0").c_str());
+    list.SetAttribute("LRArrow_Offset_Right", (std::to_string(x + width + space) + ",0").c_str());
 }
 
 float BIUtils::GetFloatFromAttr(ATTRIBUTES *pA, const char *name, float defVal)
@@ -541,7 +570,8 @@ void BIBorderInfo::Init(VDX9RENDER *rs, ATTRIBUTES *pA)
     fSpeed = 1.f;
     nTexID = -1;
     bUp = true;
-    bUsed = true;
+    // not described (Pirates of the Caribbean): no border, it is drawn untextured otherwise
+    bUsed = pA != nullptr;
     if (!pA)
         return;
     dwColor1 = pA->GetAttributeAsDword("color1", dwColor1);

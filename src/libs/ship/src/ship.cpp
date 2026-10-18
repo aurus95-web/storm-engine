@@ -5,6 +5,7 @@
 #include "ai_flow_graph.h"
 #include "character.h"
 #include "math_inlines.h"
+#include "storm/port_options.hpp"
 #include "shared/mast_msg.h"
 #include "shared/messages.h"
 #include "shared/sail_msg.h"
@@ -12,6 +13,7 @@
 #include "shared/sound.h"
 #include "ship_lights.h"
 #include "track.h"
+#include "storm/layers.hpp"
 
 CREATE_CLASS(SHIP)
 
@@ -108,6 +110,8 @@ SHIP::~SHIP()
         if (pST)
             pST->DelShip(this);
     }
+    if (const auto pShipsLights = static_cast<IShipLights *>(core.GetEntityPointer(shipLights)))
+        pShipsLights->Release(this);
 
     // aFirePlaces.clear();
 }
@@ -283,6 +287,13 @@ BOOL SHIP::CalculateNewSpeedVector(CVECTOR *Speed, CVECTOR *Rotate)
 
     Speed->z *= GetMaxSpeedZ();
     Rotate->y *= GetMaxSpeedY();
+    // Pirates of the Caribbean: the ships are faster and turn faster than in the original game (a more dynamic fight;
+    // engine.ini [touch] sea_ship_speed, sea_ship_turn in percent)
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        Speed->z *= storm::GetPortOption("sea_ship_speed", 120) * 0.01f;
+        Rotate->y *= storm::GetPortOption("sea_ship_turn", 125) * 0.01f;
+    }
 
     return true;
 }
@@ -1218,10 +1229,21 @@ uint64_t SHIP::ProcessMessage(MESSAGE &message)
     case MSG_SEA_REFLECTION_DRAW:
         Realize(0);
         break;
-    case AI_MESSAGE_SET_LAYERS:
-        ExecuteLayer = message.Long();
-        RealizeLayer = message.Long();
+    case AI_MESSAGE_SET_LAYERS: {
+        // Pirates of the Caribbean scripts pass the layer names
+        const auto getLayer = [&message]() -> int32_t {
+            return message.GetCurrentFormatType() == 's' ? storm::GetLayerIndexByName(message.String())
+                                                         : message.Long();
+        };
+        const auto executeLayer = getLayer();
+        const auto realizeLayer = getLayer();
+        if (executeLayer >= 0 && realizeLayer >= 0)
+        {
+            ExecuteLayer = executeLayer;
+            RealizeLayer = realizeLayer;
+        }
         break;
+    }
     case MSG_SHIP_CREATE:
         SetACharacter(message.AttributePointer());
         Mount(message.AttributePointer());
@@ -1245,6 +1267,19 @@ uint64_t SHIP::ProcessMessage(MESSAGE &message)
         RecalculateWorldOffset();
         break;
     case MSG_SHIP_ACTIVATE_FIRE_PLACE: {
+        if (message.GetFormat() == "llsslf")
+        {
+            // Pirates of the Caribbean: the index, the smoke and the fire particles, the sound already played by the
+            // scripts, the time
+            const auto dwFPIndex = static_cast<uint32_t>(message.Long());
+            const std::string &smoke = message.String();
+            const std::string &fire = message.String();
+            const auto iSoundID = message.Long();
+            const auto fRunTime = message.Float();
+            if (dwFPIndex < aFirePlaces.size())
+                aFirePlaces[dwFPIndex].Run(smoke.c_str(), fire.c_str(), -1, "", fRunTime, iSoundID);
+            break;
+        }
         const auto dwFPIndex = static_cast<uint32_t>(message.Long());
         const std::string &str = message.String();
         const std::string &str1 = message.String();
@@ -1435,6 +1470,19 @@ bool SHIP::Mount(ATTRIBUTES *_pAShip)
     }
 
     core.Event("Ship_StartLoad", "a", GetACharacter());
+    // Pirates of the Caribbean scripts do not set the path of the ship textures (later scripts do it in
+    // Ship_StartLoad with SetTexturePath(0, "Ships\\")): the same sequence as the native SetTexturePath
+    const bool setTexturePath = core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN;
+    // the path of the geometry too: the models keep it to be restored with (after the boarding they are released
+    // and restored with the texture path of that moment)
+    const std::string oldGeometryTexturePath = pGS->GetTexturePath();
+    if (setTexturePath)
+    {
+        pRS->TextureCreate(reinterpret_cast<const char *>(-1));
+        pRS->TextureCreate(nullptr);
+        pRS->TextureCreate("Ships\\");
+        pGS->SetTexturePath("Ships\\");
+    }
     core.Event(SEA_GET_LAYERS, "i", GetId());
 
     core.AddToLayer(SEA_REFLECTION2, GetId(), 100);
@@ -1455,6 +1503,8 @@ bool SHIP::Mount(ATTRIBUTES *_pAShip)
                    static_cast<const char *>(GetACharacter()->GetAttribute("id")));
         // GetACharacter()->Dump(GetACharacter(), 0);
         bMounted = false;
+        if (setTexturePath)
+            pGS->SetTexturePath(oldGeometryTexturePath.c_str());
         return false;
     }
 
@@ -1561,8 +1611,16 @@ bool SHIP::Mount(ATTRIBUTES *_pAShip)
     ATTRIBUTES *pALights = GetACharacter()->FindAClass(GetACharacter(), "ship.lights");
     ATTRIBUTES *pAFlares = GetACharacter()->FindAClass(GetACharacter(), "ship.flares");
 
-    const bool bLights = (pALights) ? pALights->GetAttributeAsDword() != 0 : false;
-    const bool bFlares = (pAFlares) ? pAFlares->GetAttributeAsDword() != 0 : false;
+    auto bLights = (pALights) ? pALights->GetAttributeAsDword() != 0 : false;
+    auto bFlares = (pAFlares) ? pAFlares->GetAttributeAsDword() != 0 : false;
+    // Pirates of the Caribbean: the ships have the lights on when the weather has them (the night)
+    if (!pALights && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        int32_t isLight = 0;
+        if (auto *pVar = static_cast<VDATA *>(core.GetScriptVariable("bWeatherIsLight")))
+            pVar->Get(isLight);
+        bLights = bFlares = isLight != 0;
+    }
 
     NODE *pFonarDay = pModel->FindNode("fd");
     NODE *pFonarNight = pModel->FindNode("fn");
@@ -1603,8 +1661,9 @@ bool SHIP::Mount(ATTRIBUTES *_pAShip)
 
     if (bLights && bFlares)
     {
-        const auto pShipsLights = static_cast<IShipLights *>(core.GetEntityPointer(shipLights));
-        pShipsLights->ResetLights(this, bLights);
+        // no ShipLights at the moored ships of the locations
+        if (const auto pShipsLights = static_cast<IShipLights *>(core.GetEntityPointer(shipLights)))
+            pShipsLights->ResetLights(this, bLights);
     }
 
     // add fireplaces
@@ -1641,9 +1700,18 @@ bool SHIP::Mount(ATTRIBUTES *_pAShip)
         pModelUpperShip = static_cast<MODEL *>(core.GetEntityPointer(model_uppership_id));
     }
 
+    // the scripts create the sailors now, with their own textures
+    if (setTexturePath)
+        pGS->SetTexturePath(oldGeometryTexturePath.c_str());
     // event to script
     core.Event(SHIP_CREATE, "li", GetACharacter()->GetAttributeAsDword("index"), GetId());
     core.Event("Ship_EndLoad", "a", GetACharacter());
+    if (setTexturePath)
+    {
+        pRS->TextureCreate(reinterpret_cast<const char *>(-1));
+        pRS->TextureCreate(nullptr);
+        pRS->TextureCreate("");
+    }
 
     // add to ship tracks
     if (const auto eidTmp = core.GetEntityId("ShipTracks"))

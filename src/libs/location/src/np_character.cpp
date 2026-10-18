@@ -147,6 +147,8 @@ bool NPCharacter::PostInit()
     int32_t tmpInt;
     if (vd && vd->Get(tmpInt))
         stunChance = tmpInt;
+    else if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        stunChance = 30; // otherwise every hit stuns, and the enemy never strikes back
 
     // Parameter normalization
     if (attackCur < 0.0f)

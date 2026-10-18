@@ -14,6 +14,7 @@
 
 #include "geometry.h"
 #include "string_compare.hpp"
+#include "wdm_enemy_ship.h"
 
 //============================================================================================
 
@@ -110,6 +111,9 @@ void WdmObjects::AddShip(WdmShip *ship)
 void WdmObjects::DelShip(WdmShip *ship)
 {
     Assert(ship);
+    // the encounter of the player is gone
+    if (static_cast<WdmShip *>(enemyShip) == ship)
+        enemyShip = nullptr;
     for (auto &it : ships)
     {
         if (it == ship)

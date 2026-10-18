@@ -112,6 +112,10 @@ void ISLAND::Realize(uint32_t Delta_Time)
     }
 
     pRS->GetRenderState(D3DRS_FOGDENSITY, (uint32_t *)&fOldFogDensity);
+    // Pirates of the Caribbean sets no island fog density: the fog of the weather
+    if (!AttributesPointer->GetAttribute("FogDensity") &&
+        core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        fIslandFogDensity = fOldFogDensity;
     pRS->SetRenderState(D3DRS_FOGDENSITY, F2DW(fIslandFogDensity));
     int32_t j;
     for (j = static_cast<int32_t>(fMaxDistance / fOldFar); j >= 0; j--)

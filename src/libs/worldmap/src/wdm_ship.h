@@ -81,6 +81,7 @@ class WdmShip : public WdmRenderModel
     float ax, ay, az;
     float dltAx, dltAz;
     float speed, turnspd;
+    float maxTurnSpd = WDM_SHIP_MAX_TURNSPD;
     float baseV;
     float kMaxSpeed;
     CVECTOR rspeed;

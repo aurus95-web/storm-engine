@@ -521,7 +521,15 @@ void SKY::FillSkyDirArray(ATTRIBUTES *pAttribute)
     aSkyDirArray.clear();
     const int32_t q = pAttribute->GetAttributesNum();
     if (q < 1)
+    {
+        // a single sky folder set as the value (Pirates of the Caribbean) instead of d0..dN children
+        if (pAttribute->GetThisAttr() && pAttribute->GetThisAttr()[0])
+        {
+            aSkyDirArray.emplace_back(pAttribute->GetThisAttr());
+        }
+        fTimeFactor = 0.f;
         return;
+    }
 
     // aSkyDirArray.AddElements( q );
     aSkyDirArray.resize(aSkyDirArray.size() + q);
@@ -551,7 +559,7 @@ void SKY::FillSkyDirArray(ATTRIBUTES *pAttribute)
 void SKY::GetSkyDirStrings(std::string &sSkyDir, std::string &sSkyDirNext)
 {
     auto n1 = static_cast<int32_t>(fTimeFactor);
-    if (n1 >= 0)
+    if (n1 >= 0 && !aSkyDirArray.empty())
     {
         if (n1 >= static_cast<int32_t>(aSkyDirArray.size()))
             n1 -= aSkyDirArray.size();

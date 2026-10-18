@@ -82,8 +82,9 @@ void BIManSign::Draw()
         for (int32_t n = 0; n < m_nManQuantity; n++)
         {
             m_pRS->TextureSet(0, m_Man[n].nTexture);
+            // battle_colorRectangle of Pirates of the Caribbean ignores the vertex color: the blinking face is tinted
             m_pRS->DrawBuffer(m_nVBufID, sizeof(BI_COLOR_VERTEX), m_nIBufID, nStartV, 4, nStartI, 2,
-                              "battle_colorRectangle");
+                              m_bAlarmFace ? "battle_tex_col_Rectangle" : "battle_colorRectangle");
             nStartV += 4;
         }
 
@@ -158,6 +159,8 @@ void BIManSign::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
     m_nAlarmTextureID = -1;
     m_dwAlarmHighColor = ARGB(255, 168, 28, 28);
     m_dwAlarmLowColor = ARGB(64, 168, 28, 28);
+    m_dwAlarmFaceColor = m_dwManFaceColor;
+    m_bAlarmFace = false;
     FULLRECT(m_rAlarmUV);
     ZERROPOINT(m_pntAlarmOffset);
     FILLPOINT(m_pntAlarmIconSize, 128, 128);
@@ -219,6 +222,8 @@ void BIManSign::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
             m_nAlarmTextureID = m_pRS->TextureCreate(pcTmp);
         m_dwAlarmHighColor = pA->GetAttributeAsDword("alarmhighcolor", m_dwAlarmHighColor);
         m_dwAlarmLowColor = pA->GetAttributeAsDword("alarmlowcolor", m_dwAlarmLowColor);
+        m_bAlarmFace = pA->GetAttribute("alarmfacecolor") != nullptr;
+        m_dwAlarmFaceColor = pA->GetAttributeAsDword("alarmfacecolor", m_dwAlarmFaceColor);
         pcTmp = pA->GetAttribute("alarmuv");
         if (pcTmp)
             sscanf(pcTmp, "%f,%f,%f,%f", &m_rAlarmUV.left, &m_rAlarmUV.top, &m_rAlarmUV.right, &m_rAlarmUV.bottom);
@@ -258,6 +263,11 @@ void BIManSign::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
         pcTmp = pA->GetAttribute("manenergyiconsize");
         if (pcTmp)
             sscanf(pcTmp, "%f,%f", &m_pntManEnergyIconSize.x, &m_pntManEnergyIconSize.y);
+        pcTmp = pA->GetAttribute("manstatebackuv");
+        m_bManStateBack = pcTmp != nullptr;
+        if (pcTmp)
+            sscanf(pcTmp, "%f,%f,%f,%f", &m_rManStateBackUV.left, &m_rManStateBackUV.top, &m_rManStateBackUV.right,
+                   &m_rManStateBackUV.bottom);
 
         pcTmp = pA->GetAttribute("gunchargetexturename");
         if (pcTmp)
@@ -307,6 +317,10 @@ void BIManSign::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
             sscanf(pcTmp, "%f,%f", &m_pntManPicIconSize.x, &m_pntManPicIconSize.y);
 
         m_nCommandListVerticalOffset = pA->GetAttributeAsDword("commandlistverticaloffset");
+        m_nCommandListRightGap = static_cast<int32_t>(pA->GetAttributeAsDword("commandlistrightgap", static_cast<uint32_t>(-1)));
+        m_bHorizontalBars = pA->GetAttributeAsDword("horizontalbars", 0) != 0;
+        m_nGunChargeBullets = static_cast<int32_t>(pA->GetAttributeAsDword("gunchargebullets", 0));
+        m_fGunChargeBulletSpace = pA->GetAttributeAsFloat("gunchargebulletspace", 0.f);
 
         for (n = 0; n < MAX_MAN_QUANTITY; n++)
         {
@@ -325,6 +339,12 @@ size_t BIManSign::AddTexture(const char *pcTextureName, int32_t nCols, int32_t n
     if (m_pCommandList)
         return m_pCommandList->AddTexture(pcTextureName, nCols, nRows);
     return -1;
+}
+
+void BIManSign::SetPotcPictures(int32_t nDefaultTexture) const
+{
+    if (m_pCommandList)
+        m_pCommandList->SetPotcPictures(nDefaultTexture);
 }
 
 void BIManSign::Recollect()
@@ -377,6 +397,45 @@ void BIManSign::MakeControl()
 
     core.Controls->GetControlState(BI_COMMANDS_CANCEL, cs);
     if (cs.state == CST_ACTIVATED)
+        ExecuteCommand(BI_MSG_COMMAND_DEACTIVATE);
+}
+
+void BIManSign::LeaveTouchMode()
+{
+    if (!m_pCommandList || !m_pCommandList->IsTouchMode())
+        return;
+    m_pCommandList->SetTouchMode(false);
+    SetActive(false);
+}
+
+// touch screens: the commands are always shown, a tap on a command does it, a tap aside leaves a submenu
+void BIManSign::TouchControl()
+{
+    if (!m_pCommandList)
+        return;
+    m_pCommandList->SetTouchMode(true);
+    // while the screen fades (a reload) the closed list does not reopen: a second tap would start the reload again
+    if (core.GetEntityId("Fader") != invalid_entity)
+        return;
+    if (!IsActive())
+        SetActive(true);
+    m_pCommandList->AddTouchPointerAreas();
+    float x, y;
+    if (!core.Controls->GetTouchTap(x, y))
+        return;
+    D3DVIEWPORT9 vp;
+    m_pRS->GetViewport(&vp);
+    const auto n = m_pCommandList->GetCommandAt(static_cast<int32_t>(x * vp.Width), static_cast<int32_t>(y * vp.Height));
+    if (n >= 0)
+    {
+        m_pCommandList->SelectCommand(n);
+        ExecuteCommand(BI_MSG_COMMAND_ACTIVATE);
+    }
+    else if (n == BICommandList::kTouchLeftArrow)
+        ExecuteCommand(BI_MSG_COMMAND_LEFT);
+    else if (n == BICommandList::kTouchRightArrow)
+        ExecuteCommand(BI_MSG_COMMAND_RIGHT);
+    else if (m_nCommandMode != BI_COMMODE_COMMAND_SELECT)
         ExecuteCommand(BI_MSG_COMMAND_DEACTIVATE);
 }
 
@@ -482,11 +541,12 @@ int32_t BIManSign::CalculateManQuantity()
 void BIManSign::UpdateBuffers(int32_t nShipQ)
 {
     m_nBackSquareQ = nShipQ;
-    m_nManStateSquareQ = nShipQ * 2;
-    m_nGunChargeSquareQ = nShipQ * 2;
+    m_nManStateSquareQ = nShipQ * (m_bManStateBack ? 4 : 2);
+    m_nGunChargeSquareQ = nShipQ * (m_nGunChargeBullets > 0 ? m_nGunChargeBullets : 2);
     m_nGunReloadSquareQ = nShipQ;
     const auto nManSquareQ = nShipQ;
-    const int32_t nAlarmSquareQ = (m_bIsAlarmOn && (nShipQ > 0)) ? 1 : 0;
+    // reserved: the alarm turns on and off without updating the buffers
+    const int32_t nAlarmSquareQ = nShipQ > 0 ? 1 : 0;
 
     const auto nMaxSquareQ =
         std::max({m_nBackSquareQ, m_nManStateSquareQ, m_nGunChargeSquareQ, m_nGunReloadSquareQ, nManSquareQ});
@@ -544,8 +604,11 @@ void BIManSign::FillVertexBuffer()
 
         // face
         for (n = 0; n < m_nManQuantity; n++)
-            vn += WriteSquareToVBuff(&pV[vn], m_Man[n].rUV, m_dwManFaceColor, m_Man[n].pntPos + m_pntManPicOffset,
-                                     m_pntManPicIconSize);
+            vn += WriteSquareToVBuff(&pV[vn], m_Man[n].rUV,
+                                     n == 0 && m_bIsAlarmOn && m_bAlarmFace
+                                         ? GetColorByFactor(m_dwManFaceColor, m_dwAlarmFaceColor, m_fAlarmTime)
+                                         : m_dwManFaceColor,
+                                     m_Man[n].pntPos + m_pntManPicOffset, m_pntManPicIconSize);
 
         // Gun reload status
         for (n = 0; n < m_nManQuantity; n++)
@@ -568,19 +631,43 @@ void BIManSign::FillVertexBuffer()
                                      m_Man[0].pntPos + m_pntAlarmOffset, m_pntAlarmIconSize);
         }
 
-        // state (HP & Energy)
+        // state (HP & Energy) on the dark tracks
+        for (n = 0; m_bManStateBack && n < m_nManQuantity; n++)
+        {
+            vn += WriteSquareToVBuff(&pV[vn], m_rManStateBackUV, m_dwManStateColor, m_Man[n].pntPos + m_pntManHPOffset,
+                                     m_pntManHPIconSize);
+            vn += WriteSquareToVBuff(&pV[vn], m_rManStateBackUV, m_dwManStateColor,
+                                     m_Man[n].pntPos + m_pntManEnergyOffset, m_pntManEnergyIconSize);
+        }
         for (n = 0; n < m_nManQuantity; n++)
         {
             vn += WriteSquareToVBuffWithProgress(&pV[vn], m_rManHPUV, m_dwManStateColor,
                                                  m_Man[n].pntPos + m_pntManHPOffset, m_pntManHPIconSize,
-                                                 GetProgressManHP(n), 0.f, 0.f, 0.f);
+                                                 m_bHorizontalBars ? 0.f : GetProgressManHP(n), 0.f, 0.f,
+                                                 m_bHorizontalBars ? GetProgressManHP(n) : 0.f);
             vn += WriteSquareToVBuffWithProgress(&pV[vn], m_rManEnergyUV, m_dwManStateColor,
                                                  m_Man[n].pntPos + m_pntManEnergyOffset, m_pntManEnergyIconSize,
-                                                 GetProgressManEnergy(n), 0.f, 0.f, 0.f);
+                                                 m_bHorizontalBars ? 0.f : GetProgressManEnergy(n), 0.f, 0.f,
+                                                 m_bHorizontalBars ? GetProgressManEnergy(n) : 0.f);
         }
 
         // Gun charge status
-        for (n = 0; n < m_nManQuantity; n++)
+        for (n = 0; m_nGunChargeBullets > 0 && n < m_nManQuantity; n++)
+        {
+            // the row of shootMax bullets starts at the left edge of the bars, the first shootCur of them are loaded
+            const auto step = m_pntGunChargeIconSize.x + m_fGunChargeBulletSpace;
+            const auto quantity = std::min(m_Man[n].nShootMax, m_nGunChargeBullets);
+            for (int32_t i = 0; i < m_nGunChargeBullets; i++)
+            {
+                const FRECT uv = {i < m_Man[n].nShootCurrent ? 0.f : .5f, 0.f,
+                                  i < m_Man[n].nShootCurrent ? .5f : 1.f, 1.f};
+                auto pos = m_Man[n].pntPos + m_pntGunChargeOffset;
+                pos.x += (m_pntGunChargeIconSize.x - m_pntManEnergyIconSize.x) * .5f + i * step;
+                vn += WriteSquareToVBuff(&pV[vn], uv, m_dwGunChargeColor, pos,
+                                         i < quantity ? m_pntGunChargeIconSize : FPOINT{0.f, 0.f});
+            }
+        }
+        for (n = 0; m_nGunChargeBullets == 0 && n < m_nManQuantity; n++)
         {
             vn += WriteSquareToVBuffWithProgress(&pV[vn], m_rGunChargeUV, m_dwGunChargeBackColor,
                                                  m_Man[n].pntPos + m_pntGunChargeOffset, m_pntGunChargeIconSize, 0.f,
@@ -699,6 +786,13 @@ int32_t BIManSign::WriteSquareToVBuffWithProgress(BI_COLOR_VERTEX *pv, const FRE
 
 void BIManSign::UpdateCommandList() const
 {
+    if (m_pCommandList && m_nCommandListRightGap >= 0)
+    {
+        float right = 0.f;
+        for (int32_t n = 0; n < m_nManQuantity; n++)
+            right = std::max(right, m_Man[n].pntPos.x + m_pntManPicIconSize.x / 2);
+        m_pCommandList->SetLeft(static_cast<int32_t>(right) + m_nCommandListRightGap);
+    }
     if (m_pCommandList)
         m_pCommandList->Update(GetCurrentCommandTopLine(), GetCurrentCommandCharacterIndex(), GetCurrentCommandMode());
 }
@@ -769,7 +863,19 @@ float BIManSign::GetGunProgressByIndex(int32_t nIdx)
 void BIManSign::CheckDataChange()
 {
     auto *pAttr = m_pARoot ? m_pARoot->GetAttributeClass("data") : nullptr;
-    if (pAttr && BoolACompare(pAttr, "alarm", m_bIsAlarmOn))
+    if (pAttr && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        // Pirates of the Caribbean: the alarm of the enemies is a level (0..1), the active alarm a flag
+        const auto bAlarm = pAttr->GetAttributeAsFloat("alarm", 0.f) > 0.f || pAttr->GetAttributeAsDword("riskAlarm", 0) != 0;
+        if (bAlarm != m_bIsAlarmOn)
+        {
+            m_bIsAlarmOn = bAlarm;
+            m_fAlarmTime = 0.f;
+            m_bAlarmUpDirection = true;
+            m_bMakeVertexFill = true;
+        }
+    }
+    else if (pAttr && BoolACompare(pAttr, "alarm", m_bIsAlarmOn))
         m_bMakeVertexFill = true;
     if (pAttr)
         pAttr = pAttr->GetAttributeClass("icons");
@@ -805,6 +911,25 @@ void BIManSign::CheckDataChange()
             TEXTURE_RELEASE(m_pRS, m_Man[n].nTexture);
             m_Man[n].nTexture = m_pRS->TextureCreate(m_Man[n].sTexture.c_str());
             m_bMakeVertexFill = true;
+        }
+        // Pirates of the Caribbean: the face number instead of the texture, pistol charge instead of energy
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        {
+            if (!pA->GetAttribute("energy") && FloatACompare(pA, "charge", m_Man[n].fEnergy))
+                m_bMakeVertexFill = true;
+            const char *picture = pA->GetAttribute("picture");
+            if (!pA->GetAttribute("texture") && picture)
+            {
+                const auto texture = std::string("interfaces\\portraits\\64\\face_") + picture + ".tga";
+                if (texture != m_Man[n].sTexture)
+                {
+                    m_Man[n].sTexture = texture;
+                    TEXTURE_RELEASE(m_pRS, m_Man[n].nTexture);
+                    m_Man[n].nTexture = m_pRS->TextureCreate(texture.c_str());
+                    FULLRECT(m_Man[n].rUV);
+                    m_bMakeVertexFill = true;
+                }
+            }
         }
     }
 

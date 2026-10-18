@@ -104,6 +104,27 @@ SEA::SEA()
     vFogColor = 0.0f;
     bFogEnable = false;
 
+    // Pirates of the Caribbean weathers have no Sea2 parameters: the defaults of Beyond New Horizons
+    // (WhrUtils.c) for such weathers, the colors come from Sea.GF3
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        fBumpScale = 0.05f;
+        fBumpSpeed = 1.0f;
+        v4SeaColor = COLOR2VECTOR4(ARGB(0, 25, 55, 80));
+        v4SkyColor = COLOR2VECTOR4(ARGB(0, 205, 255, 255));
+        fAmp1 = _fAmp1 = 7.0f;
+        fAnimSpeed1 = 2.0f;
+        fScale1 = 0.3f;
+        vMoveSpeed1 = CVECTOR(2.0f, 0.0f, 0.0f);
+        fAmp2 = _fAmp2 = 1.1f;
+        fAnimSpeed2 = 19.0f;
+        fScale2 = 3.0f;
+        vMoveSpeed2 = CVECTOR(1.0f, 0.0f, 1.0f);
+        fPosShift = 0.0f;
+        v4SeaParameters = CVECTOR4(0.3f, 0.9f, 0.9f, 0.0f); // attenuation, reflection, transparency
+        fFrenel = 0.45f;
+    }
+
     pSeaFrame1 = new float[XWIDTH * YWIDTH];
     pSeaFrame2 = new float[XWIDTH * YWIDTH];
     pSeaNormalsFrame1 = new float[2 * XWIDTH * YWIDTH];
@@ -1825,6 +1846,20 @@ uint32_t SEA::AttributeChanged(ATTRIBUTES *pAttribute)
     if (*pParent == "isDone")
     {
         Realize(0);
+    }
+
+    if (*pParent == "GF3" && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        if (*pAttribute == "WaterColor")
+        {
+            v4SeaColor = COLOR2VECTOR4(pAttribute->GetAttributeAsDword());
+            return 0;
+        }
+        if (*pAttribute == "SkyColor")
+        {
+            v4SkyColor = COLOR2VECTOR4(pAttribute->GetAttributeAsDword());
+            return 0;
+        }
     }
 
     if (*pParent == "Sea2")

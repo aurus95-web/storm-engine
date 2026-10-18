@@ -348,7 +348,42 @@ void CXI_QUESTTEXTS::StartQuestShow(ATTRIBUTES *pA, int qn)
         questLogName = pAttr->GetThisName();
 
     std::vector<std::string> asStringList;
-    if (ptrOwner->QuestFileReader() && pATextList)
+    // Pirates of the Caribbean keeps the records in one string, the newest first: "@<date>@<text id>,@<date>@<text id>"
+    // (AddQuestRecord in quests.c), the later games as the attributes of Text
+    const char *pcRecords = pATextList && pATextList->GetAttributesNum() == 0 ? pATextList->GetThisAttr() : nullptr;
+    if (ptrOwner->QuestFileReader() && pcRecords && pcRecords[0])
+    {
+        auto pcPtr = const_cast<char *>(pcRecords);
+        char pcQuestID[1024], pcTextID[1024], pcDate[256];
+        while (GetNextIdFromList(pcPtr, pcQuestID, sizeof(pcQuestID), pcTextID, sizeof(pcTextID) - 1, pcDate))
+        {
+            // space for aparting records
+            if (m_listCur != nullptr)
+                m_listCur = m_listCur->Add("", cFlag);
+            asStringList.clear();
+            if (pcDate[0])
+                asStringList.push_back(pcDate);
+            asStringList.push_back(ptrOwner->QuestFileReader()->GetRecordText(
+                pcQuestID[0] ? pcQuestID : questLogName, pcTextID, ""));
+            for (const auto &record : asStringList)
+            {
+                // decompose the resulting string into lines that fit into the output area
+                auto pcStrPtr = const_cast<char *>(record.c_str());
+                char newStr[512];
+                while (GetLineNext(m_idFont, pcStrPtr, newStr, sizeof(newStr)))
+                {
+                    if (m_listCur == nullptr)
+                    {
+                        m_listCur = m_listRoot = new STRING_DESCRIBER(newStr);
+                        m_listCur->complete = cFlag;
+                    }
+                    else
+                        m_listCur = m_listCur->Add(newStr, cFlag);
+                }
+            }
+        }
+    }
+    else if (ptrOwner->QuestFileReader() && pATextList)
     {
         const int32_t q = pATextList->GetAttributesNum();
         for (auto n = q - 1; n >= 0; n--)

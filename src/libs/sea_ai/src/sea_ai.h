@@ -10,6 +10,9 @@ class SEA_AI : public Entity
 {
   private:
     bool bFirstInit;
+    // Pirates of the Caribbean: the lights of the ships (later versions create ShipLights by the scripts)
+    entid_t shipLights_ = invalid_entity;
+    void CreatePotcShipLights();
 
     void AddShip(entid_t _eidShip, gsl::not_null<ATTRIBUTES*> pCharacter, gsl::not_null<ATTRIBUTES*> pAShip);
     void SetCompanionEnemy(ATTRIBUTES *pACharacter);

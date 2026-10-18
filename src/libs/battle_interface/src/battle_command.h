@@ -29,6 +29,16 @@ class BICommandList
     virtual void FillIcons() = 0;
 
     size_t AddTexture(const char *pcTextureName, uint32_t nCols, uint32_t nRows);
+    void SetLeft(int32_t nLeft)
+    {
+        m_LeftTopPoint.x = nLeft;
+    }
+    // Pirates of the Caribbean command textures: the grid of normal pictures and the same grid of selected
+    // pictures to the right of it, commands without texNum use the default texture
+    void SetPotcPictures(int32_t nDefaultTexture)
+    {
+        m_nPotcDefaultTexture = nDefaultTexture;
+    }
 
     // commands
     int32_t ExecuteConfirm();
@@ -37,6 +47,23 @@ class BICommandList
     int32_t ExecuteCancel();
 
     void SetActive(bool bActive);
+    // touch screens: the list is always open without the commands mode of the scripts (ComState),
+    // the commands are tapped
+    void SetTouchMode(bool bTouch)
+    {
+        m_bTouchMode = bTouch;
+    }
+    bool IsTouchMode() const
+    {
+        return m_bTouchMode;
+    }
+    // the command at the point of the screen, kTouchLeftArrow/kTouchRightArrow, or -1
+    static constexpr int32_t kTouchLeftArrow = -2;
+    static constexpr int32_t kTouchRightArrow = -3;
+    int32_t GetCommandAt(int32_t x, int32_t y) const;
+    // the shown icons and arrows are not the stick under them
+    void AddTouchPointerAreas() const;
+    void SelectCommand(int32_t n);
 
     bool GetActive() const
     {
@@ -51,6 +78,10 @@ class BICommandList
                           int32_t nCooldownPictureNum, int32_t nCharacterIndex, const char *pcCommandName,
                           int32_t nTargetIndex, const char *pcLocName, const char *pcNoteName);
     void AddAdditiveToIconList(int32_t nTextureNum, int32_t nPictureNum, float fDist, float fWidth, float fHeight);
+    // the state bars of a ship above the last added icon: the sails, the crew and the hull (from 0 to 1)
+    void SetStateToIcon(float fSails, float fCrew, float fHull);
+    // the height of the state bars above the last added icon (0 without them)
+    float GetIconStateHeight() const;
 
   protected:
     entid_t m_idHostObj;
@@ -67,6 +98,7 @@ class BICommandList
     };
 
     std::vector<TextureDescr> m_aTexture;
+    bool HasPotcSelectedPictures(const char *pcTextureName, uint32_t nCols, uint32_t nRows) const;
 
     struct UsedCommand
     {
@@ -92,14 +124,21 @@ class BICommandList
         };
 
         std::vector<AdditiveIcon> aAddPicList;
+        float fState[3] = {-1.f, -1.f, -1.f}; // the sails, the crew, the hull; none if negative
     };
+    std::string m_sStateTexture; // the texture of the state bars of the ships (ShipStateTexture)
+    float GetStateBarHeight() const;
+    void StateBarsAdd(const RECT &rIcon, const float (&fState)[3]);
 
     bool m_bActive;
+    bool m_bTouchMode = false;
+    std::vector<std::pair<int32_t, RECT>> m_aTouchRects; // the shown icons and arrows
 
     std::vector<UsedCommand> m_aUsedCommand;
     int32_t m_nStartUsedCommandIndex;
     int32_t m_nSelectedCommandIndex;
     int32_t m_nIconShowMaxQuantity;
+    int32_t m_nPotcDefaultTexture = -1;
 
     IPOINT m_pntActiveIconOffset;
     IPOINT m_pntActiveIconSize;

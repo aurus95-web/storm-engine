@@ -193,10 +193,15 @@ void Location::Realize(uint32_t delta_time)
             continue;
         // Print(message[i].p, 10.0f, 0, message[i].alpha, message[i].c, 0.8f, "%.0f/%.0f", message[i].hit,
         // message[i].hp);
-        Print(message[i].p, 10.0f, 0, message[i].alpha, message[i].c, 0.8f, "%.0f", message[i].hit);
+        // Pirates of the Caribbean shows the damage and the health left
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+            Print(message[i].p, 10.0f, 0, message[i].alpha, message[i].c, 0.8f, "%.0f/%.0f", message[i].hit,
+                  message[i].hp);
+        else
+            Print(message[i].p, 10.0f, 0, message[i].alpha, message[i].c, 0.8f, "%.0f", message[i].hit);
     }
-    // Drawing bars over characters
-    if (bDrawBars)
+    // Drawing bars over characters (there are none in Pirates of the Caribbean)
+    if (bDrawBars && core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
     {
         DrawEnemyBars();
     }

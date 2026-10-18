@@ -231,7 +231,10 @@ std::string FILE_SERVICE::_GetExecutableDirectory()
 std::uintmax_t FILE_SERVICE::_GetFileSize(const char *filename)
 {
     std::filesystem::path path = std::filesystem::u8path(ConvertPathResource(filename));
-    return std::filesystem::file_size(path);
+    // 0 for a missing file or a directory instead of an exception
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    return ec ? 0 : size;
 }
 
 void FILE_SERVICE::_SetCurrentDirectory(const char *pathName)

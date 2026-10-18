@@ -22,6 +22,7 @@ public:
 
   private:
     entid_t activeCamera_ = invalid_entity;
+    entid_t previousCamera_ = invalid_entity; // active again if the active one is deleted
 };
 
 } // namespace storm

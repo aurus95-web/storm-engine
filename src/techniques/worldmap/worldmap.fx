@@ -540,6 +540,33 @@ technique WdmInterfaceDrawBlend
     }
 }
 
+// Pirates of the Caribbean: the event icons (WdmIcon), the alpha of the fading comes from the color
+technique WdmDrawIcon
+{
+    pass p0
+    {
+        Lighting = false;
+        FogEnable = false;
+        ZEnable = false;
+        ZWriteEnable = false;
+        CullMode = none;
+
+        ColorArg1[0] = texture;
+        ColorArg2[0] = diffuse;
+        ColorOp[0] = modulate;
+        ColorOp[1] = disable;
+
+        AlphaArg1[0] = diffuse;
+        AlphaOp[0] = selectarg1;
+        AlphaOp[1] = disable;
+
+        AlphaTestEnable = false;
+        AlphaBlendEnable = true;
+        SrcBlend = srcalpha;
+        DestBlend = invsrcalpha;
+    }
+}
+
 technique WdmInterfaceDrawSky
 {
     pass p0

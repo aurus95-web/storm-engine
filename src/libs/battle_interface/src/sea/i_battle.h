@@ -76,6 +76,7 @@ class BATTLE_INTERFACE : public Entity
 
   protected:
     void LoadIniFile();
+    ATTRIBUTES *ConvertPotcParameters();
     void CheckSeaState();
     void EnableMessageIcons(VDATA *pvdat);
 };

@@ -6140,6 +6140,9 @@ ATTRIBUTES *COMPILER::TraceARoot(ATTRIBUTES *pA, const char *&pAccess)
 {
     if (pA == nullptr)
         return nullptr; // error or invalid argument
+    // a reference to deleted attributes: caught as the access violation on Windows
+    if (!ATTRIBUTES::IsAlive(pA))
+        throw std::runtime_error("deleted attributes");
     if (pA->GetParent() == nullptr)
         return pA; // root found
     if (pA->GetThisNameCode() == 0)
@@ -7154,7 +7157,11 @@ uint32_t COMPILER::SetScriptFunction(IFUNCINFO *pFuncInfo)
     }
     else
     {
-        SetError("native function '%s' not declared", pFuncInfo->pFuncName);
+        // Pirates of the Caribbean scripts predate many native functions of the libraries
+        if (core.GetTargetEngineVersion() > storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        {
+            SetError("native function '%s' not declared", pFuncInfo->pFuncName);
+        }
         return INVALID_FUNCHANDLE;
     }
 

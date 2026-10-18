@@ -645,6 +645,13 @@ void ShipMan::NewAction(SailorsPoints &sailorsPoints, ShipState &shipState, uint
 
     if (sailorsPoints.points.point[newWayPoint].IsMast())
     {
+        // Pirates of the Caribbean: with its walk points the sailors climb facing the shrouds, away from the mast point
+        if (mode != MAN_CLIMB_UP && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        {
+            angTo.y += PI;
+            if (angTo.y >= PI * 2)
+                angTo.y -= PI * 2;
+        }
         mode = MAN_CLIMB_UP;
     }
     else if (sailorsPoints.points.point[lastWayPoint].IsMast())
@@ -761,7 +768,8 @@ bool ShipWalk::Init(entid_t _shipID, int editorMode, const char *shipType, std::
         fileName += ".ini";
 
         // GUARD_SAILORS(sailorsPoints.ReadFromFile)
-        sailorsPoints.ReadFromFile(fileName);
+        if (sailorsPoints.points.count <= 0) // not set by the scripts (Pirates of the Caribbean)
+            sailorsPoints.ReadFromFile(fileName);
         // UN//GUARD_SAILORS
 
         if (sailorsPoints.points.count <= 0 || sailorsPoints.links.count <= 0)
@@ -1045,6 +1053,22 @@ uint64_t Sailors::ProcessMessage(MESSAGE &message)
     case AI_MESSAGE_ADD_SHIP: {
 
         const auto shipID = message.EntityID();
+        // Pirates of the Caribbean: "lileee" ship, number of points, points, links, point types
+        if (message.GetFormat() == "lileee")
+        {
+            const auto count = message.Long();
+            auto *verts = message.ScriptVariablePointer();
+            auto *graph = message.ScriptVariablePointer();
+            auto *types = message.ScriptVariablePointer();
+            auto &walk = shipWalk.emplace_back();
+            walk.sailorsPoints.ReadFromScript(count, verts, graph, types);
+            if (!walk.Init(shipID, editorMode, "", {}))
+            {
+                shipWalk.pop_back();
+                core.Trace("Sailors: cannot init a ship of Pirates of the Caribbean");
+            }
+            break;
+        }
         const std::string &c = message.String();
         std::vector<std::string> shipManModels;
 

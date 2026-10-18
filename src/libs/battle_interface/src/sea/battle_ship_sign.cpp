@@ -37,6 +37,8 @@ BIShipIcon::BIShipIcon(entid_t BIEntityID, VDX9RENDER *pRS)
     m_idShipNameFont = -1;
 
     m_nCurrentShipIndex = 0;
+    // the touch control asks for the icons before the first update (the sea after the boarding)
+    m_nShipQuantity = 0;
 }
 
 BIShipIcon::~BIShipIcon()
@@ -66,7 +68,18 @@ void BIShipIcon::Draw()
         const int32_t nStartI = 0;
 
         // ship
-        if (m_nShipSquareQ > 0)
+        if (m_nShipSquareQ > 0 && !m_aShipTextures.empty())
+        {
+            // each ship with its texture
+            for (int32_t n = 0; n < m_nShipSquareQ && n < m_nShipQuantity; n++)
+            {
+                const auto it = m_aShipTextures.find(m_Ship[n].nTexture);
+                m_pRS->TextureSet(0, it != m_aShipTextures.end() ? it->second.id : m_nShipTextureID);
+                m_pRS->DrawBuffer(m_nVBufID, sizeof(BI_COLOR_VERTEX), m_nIBufID, nStartV + n * 4, 4, nStartI, 2,
+                                  "battle_colorRectangle");
+            }
+        }
+        else if (m_nShipSquareQ > 0)
         {
             m_pRS->TextureSet(0, m_nShipTextureID);
             m_pRS->DrawBuffer(m_nVBufID, sizeof(BI_COLOR_VERTEX), m_nIBufID, nStartV, m_nShipSquareQ * 4, nStartI,
@@ -151,6 +164,9 @@ void BIShipIcon::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
     FULLRECT(m_rShipSPUV);
     ZERROPOINT(m_pntShipSPOffset);
     FILLPOINT(m_pntShipSPIconSize, 128, 128);
+    FULLRECT(m_rShipCrewUV);
+    ZERROPOINT(m_pntShipCrewOffset);
+    ZERROPOINT(m_pntShipCrewIconSize);
 
     m_nShipClassTextureID = -1;
     m_dwShipClassColor = ARGB(255, 128, 128, 128);
@@ -253,6 +269,21 @@ void BIShipIcon::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
         pcTmp = pA->GetAttribute("shipspiconsize");
         if (pcTmp)
             sscanf(pcTmp, "%f,%f", &m_pntShipSPIconSize.x, &m_pntShipSPIconSize.y);
+        pcTmp = pA->GetAttribute("shipstatebackuv");
+        m_bShipStateBack = pcTmp != nullptr;
+        if (pcTmp)
+            sscanf(pcTmp, "%f,%f,%f,%f", &m_rShipStateBackUV.left, &m_rShipStateBackUV.top, &m_rShipStateBackUV.right,
+                   &m_rShipStateBackUV.bottom);
+        pcTmp = pA->GetAttribute("shipcrewuv");
+        if (pcTmp)
+            sscanf(pcTmp, "%f,%f,%f,%f", &m_rShipCrewUV.left, &m_rShipCrewUV.top, &m_rShipCrewUV.right,
+                   &m_rShipCrewUV.bottom);
+        pcTmp = pA->GetAttribute("shipcrewoffset");
+        if (pcTmp)
+            sscanf(pcTmp, "%f,%f", &m_pntShipCrewOffset.x, &m_pntShipCrewOffset.y);
+        pcTmp = pA->GetAttribute("shipcrewiconsize");
+        if (pcTmp)
+            sscanf(pcTmp, "%f,%f", &m_pntShipCrewIconSize.x, &m_pntShipCrewIconSize.y);
 
         pcTmp = pA->GetAttribute("shipclasstexturename");
         if (pcTmp)
@@ -278,6 +309,8 @@ void BIShipIcon::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
         }
 
         m_nCommandListVerticalOffset = pA->GetAttributeAsDword("commandlistverticaloffset");
+        m_nCommandListRightGap = static_cast<int32_t>(pA->GetAttributeAsDword("commandlistrightgap", static_cast<uint32_t>(-1)));
+        m_bHorizontalBars = pA->GetAttributeAsDword("horizontalbars", 0) != 0;
 
         pcTmp = pA->GetAttribute("shiptexturename");
         if (pcTmp)
@@ -295,6 +328,20 @@ void BIShipIcon::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
 
         m_dwShipNCols = pA->GetAttributeAsDword("xsize");
         m_dwShipNRows = pA->GetAttributeAsDword("ysize");
+        if (auto *pTextures = pA->GetAttributeClass("ShipTextures"))
+        {
+            for (size_t i = 0; i < pTextures->GetAttributesNum(); i++)
+            {
+                auto *pT = pTextures->GetAttributeClass(i);
+                const char *name = pT ? pT->GetThisName() : nullptr;
+                if (!name || name[0] != 't' || !pT->GetAttribute("name"))
+                    continue;
+                auto &texture = m_aShipTextures[atoi(name + 1)];
+                texture.id = m_pRS->TextureCreate(pT->GetAttribute("name"));
+                texture.cols = std::max(pT->GetAttributeAsDword("xsize", 1), 1u);
+                texture.rows = std::max(pT->GetAttributeAsDword("ysize", 1), 1u);
+            }
+        }
 
         for (n = 0; n < MAX_SHIP_QUANTITY; n++)
         {
@@ -368,14 +415,115 @@ void BIShipIcon::MakeControl()
         ExecuteCommand(Command_cancel);
 }
 
+// touch screens: the commands are always shown, a tap on a command does it, a tap aside leaves a submenu
+void BIShipIcon::LeaveTouchMode()
+{
+    if (!m_pCommandList || !m_pCommandList->IsTouchMode())
+        return;
+    m_pCommandList->SetTouchMode(false);
+    SetActive(false);
+}
+
+void BIShipIcon::TouchControl()
+{
+    if (!m_pCommandList)
+        return;
+    m_pCommandList->SetTouchMode(true);
+    // while the screen fades (a reload) the closed list does not reopen: a second tap would start the reload again
+    if (core.GetEntityId("Fader") != invalid_entity)
+        return;
+    if (!IsActive())
+    {
+        // the commands of the hero again after a done command
+        m_nCurrentShipIndex = 0;
+        SetActive(true);
+    }
+    m_pCommandList->AddTouchPointerAreas();
+    D3DVIEWPORT9 vp;
+    m_pRS->GetViewport(&vp);
+    // the icons of the own ships: a tap shows the commands of the ship
+    const auto shipRect = [this](int32_t n, float &l, float &t, float &r, float &b) {
+        const auto cx = m_Ship[n].pntPos.x + m_pntShipOffset.x, cy = m_Ship[n].pntPos.y + m_pntShipOffset.y;
+        l = cx - m_pntShipIconSize.x / 2;
+        r = cx + m_pntShipIconSize.x / 2;
+        t = cy - m_pntShipIconSize.y / 2;
+        b = cy + m_pntShipIconSize.y / 2;
+    };
+    for (int32_t n = 0; n < m_nShipQuantity && vp.Width > 0 && vp.Height > 0; n++)
+    {
+        float l, t, r, b;
+        shipRect(n, l, t, r, b);
+        core.Controls->AddTouchPointerArea(l / vp.Width, t / vp.Height, r / vp.Width, b / vp.Height);
+    }
+    float x, y;
+    if (!core.Controls->GetTouchTap(x, y))
+        return;
+    const auto n = m_pCommandList->GetCommandAt(static_cast<int32_t>(x * vp.Width), static_cast<int32_t>(y * vp.Height));
+    if (n >= 0)
+    {
+        m_pCommandList->SelectCommand(n);
+        ExecuteCommand(Command_confirm);
+    }
+    else if (n == BICommandList::kTouchLeftArrow)
+        ExecuteCommand(Command_left);
+    else if (n == BICommandList::kTouchRightArrow)
+        ExecuteCommand(Command_right);
+    else
+    {
+        for (int32_t ship = 0; ship < m_nShipQuantity; ship++)
+        {
+            float l, t, r, b;
+            shipRect(ship, l, t, r, b);
+            if (x * vp.Width >= l && x * vp.Width < r && y * vp.Height >= t && y * vp.Height < b)
+            {
+                if (ship != m_nCurrentShipIndex)
+                {
+                    m_nCurrentShipIndex = ship;
+                    m_nCommandMode = BI_COMMODE_COMMAND_SELECT;
+                    UpdateCommandList();
+                    m_pCommandList->SetUpDown(m_nCurrentShipIndex > 0, m_nCurrentShipIndex < m_nShipQuantity - 1);
+                }
+                return;
+            }
+        }
+        if (m_nCommandMode != BI_COMMODE_COMMAND_SELECT)
+            ExecuteCommand(Command_cancel);
+    }
+}
+
+void BIShipIcon::SetCommandCharacter(int32_t nCharacterIndex)
+{
+    for (int32_t n = 0; n < m_nShipQuantity; n++)
+    {
+        if (m_Ship[n].nCharacterIndex != nCharacterIndex)
+            continue;
+        m_nCurrentShipIndex = n;
+        if (!IsActive())
+            SetActive(true);
+        m_nCommandMode = BI_COMMODE_COMMAND_SELECT;
+        m_bCommandCharacterSet = true;
+        UpdateCommandList();
+        if (m_pCommandList)
+            m_pCommandList->SetUpDown(m_nCurrentShipIndex > 0, m_nCurrentShipIndex < m_nShipQuantity - 1);
+        return;
+    }
+}
+
 void BIShipIcon::ExecuteCommand(CommandType command)
 {
     switch (command)
     {
     case Command_confirm:
+        m_bCommandCharacterSet = false;
         if (m_pCommandList)
         {
             const auto nTmp = m_pCommandList->ExecuteConfirm();
+            // the scripts have shown the commands of a companion
+            if (m_bCommandCharacterSet)
+            {
+                m_bCommandCharacterSet = false;
+                break;
+            }
             if (nTmp != -1)
                 m_nCommandMode = nTmp;
         }
@@ -435,6 +583,9 @@ void BIShipIcon::Release()
     STORM_DELETE(m_pCommandList);
     TEXTURE_RELEASE(m_pRS, m_nBackTextureID);
     TEXTURE_RELEASE(m_pRS, m_nShipTextureID);
+    for (auto &[num, texture] : m_aShipTextures)
+        TEXTURE_RELEASE(m_pRS, texture.id);
+    m_aShipTextures.clear();
     TEXTURE_RELEASE(m_pRS, m_nShipStateTextureID);
     TEXTURE_RELEASE(m_pRS, m_nShipClassTextureID);
     VERTEX_BUFFER_RELEASE(m_pRS, m_nVBufID);
@@ -462,6 +613,8 @@ int32_t BIShipIcon::CalculateShipQuantity()
         m_Ship[n].pAShip = nullptr;
         m_Ship[n].nMaxHP = 100;
         m_Ship[n].nMaxSP = 100;
+        m_Ship[n].nMaxCrew = 0;
+        m_Ship[n].nTexture = -1;
         m_Ship[n].sShipName.clear();
     }
 
@@ -474,8 +627,9 @@ int32_t BIShipIcon::CalculateShipQuantity()
         m_Ship[0].pAShip = pSD->pAttr;
         m_Ship[0].nMaxHP = pSD->maxHP;
         m_Ship[0].nMaxSP = pSD->maxSP;
+        m_Ship[0].nMaxCrew = pSD->maxCrew;
         m_Ship[0].nShipClass = GetShipClass(m_Ship[0].nCharacterIndex);
-        GetShipUVFromPictureIndex(pSD->pictureNum, m_Ship[0].rUV);
+        m_Ship[0].nTexture = GetShipUV(pSD->pictureNum, pSD->textureNum, m_Ship[0].rUV);
         m_Ship[0].sShipName = pSD->pAttr ? pSD->pAttr->GetAttribute("name") : "noname";
         m_nShipQuantity++;
     }
@@ -492,8 +646,9 @@ int32_t BIShipIcon::CalculateShipQuantity()
             m_Ship[m_nShipQuantity].pAShip = pSD->pAttr;
             m_Ship[m_nShipQuantity].nMaxHP = pSD->maxHP;
             m_Ship[m_nShipQuantity].nMaxSP = pSD->maxSP;
+            m_Ship[m_nShipQuantity].nMaxCrew = pSD->maxCrew;
             m_Ship[m_nShipQuantity].nShipClass = GetShipClass(m_Ship[m_nShipQuantity].nCharacterIndex);
-            GetShipUVFromPictureIndex(pSD->pictureNum, m_Ship[m_nShipQuantity].rUV);
+            m_Ship[m_nShipQuantity].nTexture = GetShipUV(pSD->pictureNum, pSD->textureNum, m_Ship[m_nShipQuantity].rUV);
             m_Ship[m_nShipQuantity].sShipName = pSD->pAttr ? pSD->pAttr->GetAttribute("name") : "noname";
             m_nShipQuantity++;
         }
@@ -505,7 +660,7 @@ int32_t BIShipIcon::CalculateShipQuantity()
 void BIShipIcon::UpdateBuffers(int32_t nShipQ)
 {
     const auto nBackSquareQ = nShipQ;
-    const auto nShipStateSquareQ = nShipQ * 2;
+    const auto nShipStateSquareQ = nShipQ * (m_pntShipCrewIconSize.x > 0.f ? 3 : 2) * (m_bShipStateBack ? 2 : 1);
     const int32_t nShipClassSquareQ = nShipQ;
     const int32_t nShipSquareQ = nShipQ;
 
@@ -577,14 +732,31 @@ void BIShipIcon::FillVertexBuffer()
             vn += WriteSquareToVBuff(&pV[vn], m_rBackUV, m_dwBackColor, m_Ship[n].pntPos + m_pntBackOffset,
                                      m_pntBackIconSize);
 
+        for (n = 0; m_bShipStateBack && n < m_nShipQuantity; n++)
+        {
+            vn += WriteSquareToVBuff(&pV[vn], m_rShipStateBackUV, m_dwShipStateColor,
+                                     m_Ship[n].pntPos + m_pntShipHPOffset, m_pntShipHPIconSize);
+            vn += WriteSquareToVBuff(&pV[vn], m_rShipStateBackUV, m_dwShipStateColor,
+                                     m_Ship[n].pntPos + m_pntShipSPOffset, m_pntShipSPIconSize);
+            if (m_pntShipCrewIconSize.x > 0.f)
+                vn += WriteSquareToVBuff(&pV[vn], m_rShipStateBackUV, m_dwShipStateColor,
+                                         m_Ship[n].pntPos + m_pntShipCrewOffset, m_pntShipCrewIconSize);
+        }
         for (n = 0; n < m_nShipQuantity; n++)
         {
             vn += WriteSquareToVBuffWithProgress(&pV[vn], m_rShipHPUV, m_dwShipStateColor,
                                                  m_Ship[n].pntPos + m_pntShipHPOffset, m_pntShipHPIconSize,
-                                                 GetProgressShipHP(n), 0.f, 0.f, 0.f);
+                                                 m_bHorizontalBars ? 0.f : GetProgressShipHP(n), 0.f, 0.f,
+                                                 m_bHorizontalBars ? GetProgressShipHP(n) : 0.f);
             vn += WriteSquareToVBuffWithProgress(&pV[vn], m_rShipSPUV, m_dwShipStateColor,
                                                  m_Ship[n].pntPos + m_pntShipSPOffset, m_pntShipSPIconSize,
-                                                 GetProgressShipSP(n), 0.f, 0.f, 0.f);
+                                                 m_bHorizontalBars ? 0.f : GetProgressShipSP(n), 0.f, 0.f,
+                                                 m_bHorizontalBars ? GetProgressShipSP(n) : 0.f);
+            if (m_pntShipCrewIconSize.x > 0.f)
+                vn += WriteSquareToVBuffWithProgress(&pV[vn], m_rShipCrewUV, m_dwShipStateColor,
+                                                     m_Ship[n].pntPos + m_pntShipCrewOffset, m_pntShipCrewIconSize,
+                                                     m_bHorizontalBars ? 0.f : GetProgressShipCrew(n), 0.f, 0.f,
+                                                     m_bHorizontalBars ? GetProgressShipCrew(n) : 0.f);
         }
 
         for (n = 0; n < m_nShipQuantity; n++)
@@ -703,6 +875,13 @@ int32_t BIShipIcon::WriteSquareToVBuffWithProgress(BI_COLOR_VERTEX *pv, const FR
 
 void BIShipIcon::UpdateCommandList()
 {
+    if (m_pCommandList && m_nCommandListRightGap >= 0)
+    {
+        float right = 0.f;
+        for (int32_t n = 0; n < m_nShipQuantity; n++)
+            right = std::max(right, m_Ship[n].pntPos.x + m_pntShipIconSize.x / 2);
+        m_pCommandList->SetLeft(static_cast<int32_t>(right) + m_nCommandListRightGap);
+    }
     if (m_pCommandList)
         m_pCommandList->Update(GetCurrentCommandTopLine(), GetCurrentCommandCharacterIndex(), GetCurrentCommandMode());
     else
@@ -766,6 +945,14 @@ float BIShipIcon::GetProgressShipSP(int32_t nShipNum)
     return 1.f - f;
 }
 
+float BIShipIcon::GetProgressShipCrew(int32_t nShipNum) const
+{
+    if (m_Ship[nShipNum].nMaxCrew <= 0 || !m_Ship[nShipNum].pASailorQuantity)
+        return 1.f;
+    const auto f = static_cast<float>(atof(m_Ship[nShipNum].pASailorQuantity->GetThisAttr())) / m_Ship[nShipNum].nMaxCrew;
+    return 1.f - std::clamp(f, 0.f, 1.f);
+}
+
 float BIShipIcon::GetProgressShipClass(int32_t nShipNum)
 {
     if (m_Ship[nShipNum].nShipClass < 0 || m_Ship[nShipNum].nShipClass >= m_aClassProgress.size())
@@ -774,8 +961,37 @@ float BIShipIcon::GetProgressShipClass(int32_t nShipNum)
     return f;
 }
 
+int32_t BIShipIcon::GetShipUV(int32_t nPicIndex, int32_t nTextureNum, FRECT &rUV)
+{
+    const auto it = m_aShipTextures.find(nTextureNum);
+    if (it == m_aShipTextures.end())
+    {
+        GetShipUVFromPictureIndex(nPicIndex, rUV);
+        return -1;
+    }
+    // the normal pictures are in the left half of the grid
+    const auto cols = it->second.cols, rows = it->second.rows;
+    const auto half = static_cast<int32_t>(std::max(cols / 2, 1u));
+    rUV.left = static_cast<float>(nPicIndex % half) / cols;
+    rUV.top = static_cast<float>(nPicIndex / half) / rows;
+    rUV.right = rUV.left + 1.0f / cols;
+    rUV.bottom = rUV.top + 1.0f / rows;
+    return nTextureNum;
+}
+
 void BIShipIcon::GetShipUVFromPictureIndex(int32_t nPicIndex, FRECT &rUV)
 {
+    // Pirates of the Caribbean: the picture index is in the left half (normal pictures) of the grid
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN && m_dwShipNCols >= 2 &&
+        m_dwShipNRows > 0)
+    {
+        const auto half = static_cast<int32_t>(m_dwShipNCols / 2);
+        rUV.left = static_cast<float>(nPicIndex % half) / m_dwShipNCols;
+        rUV.top = static_cast<float>(nPicIndex / half) / m_dwShipNRows;
+        rUV.right = rUV.left + 1.0f / m_dwShipNCols;
+        rUV.bottom = rUV.top + 1.0f / m_dwShipNRows;
+        return;
+    }
     // TODO: Make picture count configurable
     const float pictureCount = core.GetTargetEngineVersion() >= storm::ENGINE_VERSION::TO_EACH_HIS_OWN ? 16.f : 8.f;
     const float pictureWidth = m_dwShipNCols ? 1.0f / m_dwShipNCols : 1.0f / pictureCount;

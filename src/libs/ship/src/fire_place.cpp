@@ -65,7 +65,7 @@ void FirePlace::DeleteParticle()
 }
 
 void FirePlace::Run(const char *pParticleSmokeName, const char *pParticleFireName, int32_t _iBallCharacterIndex,
-                    const char *pSoundName, float _fRunTime)
+                    const char *pSoundName, float _fRunTime, int32_t _iSoundID)
 {
     if (isActive())
         return;
@@ -73,8 +73,9 @@ void FirePlace::Run(const char *pParticleSmokeName, const char *pParticleFireNam
         return;
     const auto vPos = GetPos();
     fRunTime = _fRunTime;
-    iSoundID = core.Send_Message(eidSound, "lsllllllfff", MSG_SOUND_PLAY, pSoundName, SOUND_WAV_3D, VOLUME_FX, false,
-                                 true, false, 0, vPos.x, vPos.y, vPos.z);
+    iSoundID = pSoundName[0] ? core.Send_Message(eidSound, "lsllllllfff", MSG_SOUND_PLAY, pSoundName, SOUND_WAV_3D,
+                                                 VOLUME_FX, false, true, false, 0, vPos.x, vPos.y, vPos.z)
+                              : _iSoundID;
     SetActive(true);
     sParticleSmokeName = pParticleSmokeName;
     sParticleFireName = pParticleFireName;

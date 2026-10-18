@@ -937,6 +937,10 @@ uint32_t Character::AttributeChanged(ATTRIBUTES *apnt)
         ReadFightActions(apnt->FindAClass(apnt, "attack_feintc"), attackFeintC, fnt2);
         numAttackFeint = std::min(fnt1, fnt2);
         ReadFightActions(apnt->FindAClass(apnt, "hit_attack"), hit, numHits);
+        // Pirates of the Caribbean names the hits "hit" (the monkey has its own)
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN &&
+            !apnt->FindAClass(apnt, "hit_attack") && apnt->FindAClass(apnt, "hit"))
+            ReadFightActions(apnt->FindAClass(apnt, "hit"), hit, numHits);
         ReadFightActions(apnt->FindAClass(apnt, "parry"), parry, numParry);
         // Shot
         shot.ChangeName(apnt->GetAttribute("shot"));
@@ -945,6 +949,15 @@ uint32_t Character::AttributeChanged(ATTRIBUTES *apnt)
         hitParry.ChangeName(apnt->GetAttribute("hit_parry"));
         hitRound.ChangeName(apnt->GetAttribute("hit_round"));
         hitFire.ChangeName(apnt->GetAttribute("hit_shot"));
+        // Pirates of the Caribbean has no reaction to a shot and outside the fight (the animations hit_fire and
+        // HitNoFight are not there, the shot enemy stood still): a hit and its hit_stand
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+        {
+            if (!apnt->GetAttribute("hit_shot") && numHits > 0)
+                hitFire.ChangeName(hit[0].name);
+            if (!apnt->GetAttribute("HitNoFight"))
+                nfhit.ChangeName("hit_stand");
+        }
         block.ChangeName(apnt->GetAttribute("block"));
         blockaxe.ChangeName(apnt->GetAttribute("block_axe"));
         blockhit.ChangeName(apnt->GetAttribute("blockhit"));
@@ -953,6 +966,35 @@ uint32_t Character::AttributeChanged(ATTRIBUTES *apnt)
         recoil.ChangeName(apnt->GetAttribute("recoil"));
         strafe_l.ChangeName(apnt->GetAttribute("strafeleft"));
         strafe_r.ChangeName(apnt->GetAttribute("straferight"));
+        // Pirates of the Caribbean falls with the jump: it pauses in the air and lands then (no fall, fall_land)
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN &&
+            !apnt->GetAttribute("fall"))
+            fall.ChangeName(jump.name);
+        if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN &&
+            !apnt->FindAClass(apnt, "attack_fast"))
+        {
+            // Pirates of the Caribbean has one kind of attack, hits and no parry or feint
+            if (auto *const attack = apnt->FindAClass(apnt, "attack"))
+            {
+                ReadFightActions(attack, attackFast, numAttackFast);
+                ReadFightActions(attack, attackForce, numAttackForce);
+                ReadFightActions(attack, attackRound, numAttackRound);
+                ReadFightActions(attack, attackBreak, numAttackBreak);
+                ReadFightActions(attack, attackFeint, fnt1);
+                ReadFightActions(attack, attackFeintC, fnt2);
+                numAttackFeint = std::min(fnt1, fnt2);
+            }
+            if (auto *const hits = apnt->FindAClass(apnt, "hit"))
+            {
+                ReadFightActions(hits, hit, numHits);
+                hitFeint.ChangeName(hit[0].name);
+                hitParry.ChangeName(hit[0].name);
+                hitRound.ChangeName(hit[0].name);
+            }
+            parry[0].ChangeName(block.name);
+            numParry = 1;
+            blockbreak.ChangeName(blockhit.name);
+        }
         // read the actions of death
         at = apnt->FindAClass(apnt, "fightdead");
         if (at)
@@ -1482,6 +1524,7 @@ void Character::Attack(Character *enemy, FightAction type)
     else
         memset(&enemyAttack, 0, sizeof(enemyAttack));
     VDATA *res = nullptr;
+    auto isEnabled = false;
     const char *aname = nullptr;
     switch (type)
     {
@@ -1554,6 +1597,8 @@ void Character::Attack(Character *enemy, FightAction type)
     if (aname) //~!~
     {
         res = core.Event("ChrAttackAction", "is", GetId(), aname);
+        // Pirates of the Caribbean has no energy and no handler for this event
+        isEnabled = !res && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN;
         if (res)
         {
             int32_t isEnable = 1;
@@ -1570,7 +1615,7 @@ void Character::Attack(Character *enemy, FightAction type)
             }
         }
     }
-    if (res)
+    if (res || isEnabled)
     {
         fgtSetType = type;
     }
@@ -2808,7 +2853,8 @@ void Character::ActionEvent(Animation *animation, int32_t playerIndex, const cha
             fgtSetType = fgt_none;
             fgtSetIndex = -1;
         }
-        else if (storm::iEquals(eventName, "Attack"))
+        else if (storm::iEquals(eventName, "Attack") || storm::iEquals(eventName, "Attack_slash") ||
+                 storm::iEquals(eventName, "Attack_stub"))
         {
             CheckAttackHit(false);
         }
@@ -5145,8 +5191,17 @@ inline void Character::CheckAttackHit(bool isGunBlade)
                                                                                   fc.c->blockStart)
                                 .count();
             }
-            core.Event("Location_CharacterAttack", "iislll", GetId(), fc.c->GetId(), aname,
-                       static_cast<int32_t>(isBlocked), static_cast<int32_t>(isGunBlade), blockTime);
+            if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+            {
+                // attacker, enemy, attack damage and hit damage (the chance to break the block)
+                core.Event(isBlocked ? "Location_CharacterBlock" : "Location_CharacterAttack", "iiff", GetId(),
+                           fc.c->GetId(), 1.0f, 1.0f);
+            }
+            else
+            {
+                core.Event("Location_CharacterAttack", "iislll", GetId(), fc.c->GetId(), aname,
+                           static_cast<int32_t>(isBlocked), static_cast<int32_t>(isGunBlade), blockTime);
+            }
             // boal 09/12/06 energy consumption after impact -->
             if (isUseEnergy && fgtCurType != fgt_attack_feintc)
             {

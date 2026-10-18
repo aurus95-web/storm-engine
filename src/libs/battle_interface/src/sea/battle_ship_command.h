@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../battle_command.h"
+#include "ships_list.h"
 
 class BIShipCommandList : public BICommandList
 {
@@ -25,6 +26,7 @@ class BIShipCommandList : public BICommandList
     int32_t TownAdding(bool allLabel, bool bDiseased, bool bNotDiseased, bool bEnemy, bool bNeutral, bool bFriend);
 
     void AddFlagPictureToIcon(int32_t nCharIdx);
+    void AddStateToIcon(const SHIP_DESCRIBE_LIST::SHIP_DESCR *pSD);
 
     int32_t m_nChargeTextureNum;
     int32_t m_nCommandTextureNum;

@@ -4,6 +4,8 @@
 #ifdef _WIN32 // FIX_LINUX ddraw.h and amstream.h
 #include <amstream.h>
 #include <ddraw.h>
+#elif defined(__APPLE__)
+#include "apple_video.h"
 #endif
 
 #define XI_AVIVIDEO_FVF (D3DFVF_XYZRHW | D3DFVF_TEX1 | D3DFVF_TEXTUREFORMAT2)
@@ -67,6 +69,10 @@ class CAviPlayer : public xiBaseVideo
     IMediaStream *pPrimaryVidStream;
     IDirectDrawMediaStream *pDDStream;
     IDirectDrawStreamSample *pSample;
+#elif defined(__APPLE__)
+    // the videos converted to .mp4 (tools/video/convert-videos.sh)
+    std::unique_ptr<AppleVideo> pVideo;
+    void UpdateAppleVideo();
 #endif
 
     POINT dstPnt;

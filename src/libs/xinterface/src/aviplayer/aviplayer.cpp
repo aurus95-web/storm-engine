@@ -5,6 +5,9 @@
 
 #include "entity.h"
 #include "shared/interface/messages.h"
+#ifdef __APPLE__
+#include "file_service.h"
+#endif
 
 #define IRELEASE(i)                                                                                                    \
     {                                                                                                                  \
@@ -152,6 +155,8 @@ void CAviPlayer::Realize(uint32_t delta_time)
     {
         m_bContinue = false;
     }
+#elif defined(__APPLE__)
+    UpdateAppleVideo();
 #else
     m_bContinue = false;
 #endif
@@ -176,6 +181,10 @@ uint64_t CAviPlayer::ProcessMessage(MESSAGE &message)
         constexpr auto loop_flag = 1 << 0;
         auto flags = message.Long();
         bLoop = flags & loop_flag;
+#ifdef __APPLE__
+        if (pVideo)
+            pVideo->SetLoop(bLoop);
+#endif
         break;
     }
     }
@@ -306,6 +315,23 @@ bool CAviPlayer::PlayMedia(const char *fileName)
     }
 
     return true;
+#elif defined(__APPLE__)
+    // AVFoundation does not decode WMV: the video converted to .mp4 is next to it
+    std::string path = fileName;
+    const auto dot = path.find_last_of('.');
+    if (dot != std::string::npos && path.find_first_of("\\/", dot) == std::string::npos)
+        path.resize(dot);
+    path += ".mp4";
+    pVideo = std::make_unique<AppleVideo>();
+    if (!pVideo->Open(fio->ConvertPathResource(path.c_str()).c_str()))
+    {
+        core.Trace("Video Error!!! Can`t load video file = %s (convert the videos with tools/video/convert-videos.sh)",
+                   path.c_str());
+        pVideo.reset();
+        return false;
+    }
+    pVideo->SetLoop(bLoop);
+    return true;
 #else
     return false;
 #endif
@@ -361,6 +387,8 @@ bool CAviPlayer::GetInterfaces()
     }
 
     return true;
+#elif defined(__APPLE__)
+    return true;
 #else
     return false;
 #endif
@@ -386,6 +414,11 @@ void CAviPlayer::CleanupInterfaces()
 
     if (m_bMakeUninitializeDD)
         CoUninitialize();
+#elif defined(__APPLE__)
+    pVideo.reset();
+    if (pTex != nullptr && rs != nullptr)
+        rs->Release(pTex);
+    pTex = nullptr;
 #endif
     m_bMakeUninitializeDD = false;
 }
@@ -394,3 +427,64 @@ void CAviPlayer::ReleaseAll()
 {
     CleanupInterfaces();
 }
+
+#ifdef __APPLE__
+void CAviPlayer::UpdateAppleVideo()
+{
+    if (!pVideo || pVideo->IsFinished())
+    {
+        m_bContinue = false;
+        return;
+    }
+    if (m_bFirstDraw)
+    {
+        rs->Clear(0, nullptr, D3DCLEAR_TARGET, 0, 0, 0);
+        m_bFirstDraw = false;
+    }
+    pVideo->GetFrame([this](const uint8_t *pixels, int32_t pitch, int32_t width, int32_t height) {
+        if (!pTex)
+        {
+            // the texture and the rectangle keeping the aspect ratio in the middle of the screen
+            if (FAILED(rs->CreateTexture(AVI_GetTextureSize(width), AVI_GetTextureSize(height), 1, 0, D3DFMT_A8R8G8B8,
+                                         D3DPOOL_MANAGED, &pTex)))
+            {
+                core.Trace("Video Error!!! Can`t create texture for this video");
+                m_bContinue = false;
+                return;
+            }
+            lockRect = {0, 0, width, height};
+            D3DVIEWPORT9 vp;
+            rs->GetViewport(&vp);
+            const auto k = std::min(static_cast<float>(vp.Width) / width, static_cast<float>(vp.Height) / height);
+            const auto w = width * k;
+            const auto h = height * k;
+            const auto left = (vp.Width - w) * .5f;
+            const auto top = (vp.Height - h) * .5f;
+            const auto tu = static_cast<float>(width) / AVI_GetTextureSize(width);
+            const auto tv = static_cast<float>(height) / AVI_GetTextureSize(height);
+            for (auto &vertex : v)
+            {
+                vertex.w = .5f;
+                vertex.pos.z = 1.f;
+            }
+            v[0].pos.x = left, v[0].pos.y = top, v[0].tu = 0.f, v[0].tv = 0.f;
+            v[1].pos.x = left, v[1].pos.y = top + h, v[1].tu = 0.f, v[1].tv = tv;
+            v[2].pos.x = left + w, v[2].pos.y = top, v[2].tu = tu, v[2].tv = 0.f;
+            v[3].pos.x = left + w, v[3].pos.y = top + h, v[3].tu = tu, v[3].tv = tv;
+        }
+        D3DLOCKED_RECT locked;
+        if (FAILED(pTex->LockRect(0, &locked, &lockRect, 0)))
+            return;
+        const auto copySize = std::min(pitch, std::min(width, static_cast<int32_t>(lockRect.right)) * 4);
+        auto *out = static_cast<uint8_t *>(locked.pBits);
+        for (int32_t y = 0; y < std::min(height, static_cast<int32_t>(lockRect.bottom)); y++)
+            memcpy(out + y * locked.Pitch, pixels + y * pitch, copySize);
+        pTex->UnlockRect(0);
+    });
+    if (pTex && m_bShowVideo)
+    {
+        rs->SetTexture(0, pTex);
+        rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, XI_AVIVIDEO_FVF, 2, v, sizeof(XI_AVIVIDEO_VERTEX), "battle_icons");
+    }
+}
+#endif

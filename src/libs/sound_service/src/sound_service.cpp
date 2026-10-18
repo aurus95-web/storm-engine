@@ -5,6 +5,7 @@
 #include "file_service.h"
 #include "matrix.h"
 #include "rands.h"
+#include "string_compare.hpp"
 #include "vma.hpp"
 #include <fmod_errors.h>
 
@@ -136,7 +137,7 @@ void SoundService::ProcessFader(uint16_t idx)
             unsigned int OGGpos;
             PlayingSounds[idx].channel->getPosition(&OGGpos, FMOD_TIMEUNIT_MS);
             SetOGGPosition(PlayingSounds[idx].Name.c_str(), OGGpos);
-            PlayingSounds[idx].channel->stop();
+            PauseFadedMusic(idx);
         }
         return;
     }
@@ -164,14 +165,45 @@ void SoundService::ProcessFader(uint16_t idx)
             PlayingSounds[idx].channel->getPosition(&OGGpos, FMOD_TIMEUNIT_MS);
             SetOGGPosition(PlayingSounds[idx].Name.c_str(), OGGpos);
 
-            PlayingSounds[idx].channel->stop();
+            PauseFadedMusic(idx);
+            return;
         }
     }
     PlayingSounds[idx].channel->setVolume(PlayingSounds[idx].fFaderCurrentVolume);
 }
 
+// the music faded out (PauseAllSounds of the reloads) is paused, not stopped: the scripts resume the same music in
+// the next location (SetMusic), it fades in again (ResumeFadedMusic); another music releases it (SoundPlay)
+void SoundService::PauseFadedMusic(uint16_t idx)
+{
+    PlayingSounds[idx].fFaderDeltaInSec = 0.0f;
+    PlayingSounds[idx].channel->setVolume(0.0f);
+    PlayingSounds[idx].channel->setPaused(true);
+}
+
+bool SoundService::IsFadedMusic(uint16_t idx) const
+{
+    const auto &sound = PlayingSounds[idx];
+    return !sound.bFree && sound.fFaderNeedVolume <= 0.001f && sound.fFaderDeltaInSec == 0.0f;
+}
+
+void SoundService::ResumeFadedMusic(uint16_t idx, int32_t time)
+{
+    auto &sound = PlayingSounds[idx];
+    if (!IsFadedMusic(idx))
+        return;
+    const auto volume = sound.fSoundVolume * fMusicVolume;
+    sound.fFaderCurrentVolume = 0.0f;
+    sound.fFaderNeedVolume = volume;
+    sound.fFaderDeltaInSec = volume / (std::max(time, 1) * 0.001f);
+}
+
 uint16_t SoundService::FreeSound(const uint16_t idx)
 {
+    // a slot freed twice would be in freeSounds twice: two sounds would share it and the channel of the first one
+    // would play forever, lost
+    if (PlayingSounds[idx].bFree)
+        return idx;
     PlayingSounds[idx].bFree = true;
     if (idx >= 2 && idx < numActiveSounds)
     {
@@ -288,7 +320,7 @@ int SoundService::GetAliasIndexByName(const char *szAliasName)
     {
         if (Aliases[i].dwNameHash == dwSearchHash)
         {
-            if (Aliases[i].Name == szAliasName)
+            if (storm::iEquals(Aliases[i].Name, szAliasName))
             {
                 return i;
             }
@@ -375,6 +407,14 @@ TSD_ID SoundService::SoundPlay(const std::string_view &name, const SoundPlayOpti
 
         SoundIdx = MusicIdx;
         id = SoundIdx + 1;
+        currentMusicIdx = SoundIdx;
+        // the music of this slot may still be fading out (three changes in a row): lost, it would play forever
+        if (OGG_sound[SoundIdx])
+        {
+            if (!PlayingSounds[SoundIdx].bFree && PlayingSounds[SoundIdx].channel)
+                PlayingSounds[SoundIdx].channel->stop();
+            CHECKFMODERR(OGG_sound[SoundIdx]->release());
+        }
         OGG_sound[SoundIdx] = sound;
         PlayingSounds[SoundIdx].fFaderNeedVolume = _volume * fMusicVolume;
         PlayingSounds[SoundIdx].fFaderCurrentVolume = 0.0f;
@@ -511,7 +551,7 @@ TSD_ID SoundService::SoundPlay(const std::string_view &name, const SoundPlayOpti
     // ---------- loop through all sounds looking for the one with the same channel --------------
     for (uint16_t j = 0; j < numActiveSounds; j++)
     {
-        if (j == SoundIdx)
+        if (j == SoundIdx || PlayingSounds[j].bFree)
             continue;
 
         if (PlayingSounds[j].channel == PlayingSounds[SoundIdx].channel)
@@ -706,6 +746,13 @@ void SoundService::SoundResume(TSD_ID _id, int32_t _time /* = 0*/)
             if (PlayingSounds[i].bFree)
                 continue;
 
+            if (i <= 1)
+            {
+                // the music replaced by another one stays paused (the two played together after a dialog)
+                if (i != currentMusicIdx && IsFadedMusic(i))
+                    continue;
+                ResumeFadedMusic(i, _time);
+            }
             CHECKFMODERR(PlayingSounds[i].channel->setPaused(false));
         }
         return;
@@ -719,6 +766,11 @@ void SoundService::SoundResume(TSD_ID _id, int32_t _time /* = 0*/)
     if (_id.stamp() != sound.stamp)
         return;
 
+    if (_id.index() <= 1)
+    {
+        currentMusicIdx = _id.index();
+        ResumeFadedMusic(_id.index(), _time);
+    }
     CHECKFMODERR(sound.channel->setPaused(false));
 }
 
@@ -935,7 +987,8 @@ void SoundService::SoundStop(TSD_ID _id, int32_t _time)
             PlayingSounds[0].fFaderCurrentVolume = fVol;
             PlayingSounds[0].fFaderDeltaInSec = -fVol / (_time * 0.001f);
 
-            if (PlayingSounds[0].fFaderDeltaInSec <= 0.00001f)
+            // released at once only if silent already (the fading out delta is negative, it was always released)
+            if (fabsf(PlayingSounds[0].fFaderDeltaInSec) <= 0.00001f)
             {
                 if (OGG_sound[0])
                 {
@@ -949,7 +1002,7 @@ void SoundService::SoundStop(TSD_ID _id, int32_t _time)
             PlayingSounds[1].fFaderCurrentVolume = fVol;
             PlayingSounds[1].fFaderDeltaInSec = -fVol / (_time * 0.001f);
 
-            if (PlayingSounds[1].fFaderDeltaInSec <= 0.00001f)
+            if (fabsf(PlayingSounds[1].fFaderDeltaInSec) <= 0.00001f)
             {
                 if (OGG_sound[1])
                 {
@@ -1138,6 +1191,14 @@ void SoundService::InitAliases()
     for (std::string curName : vFilenames)
     {
         LoadAliasFile(curName.c_str());
+    }
+    // Pirates of the Caribbean keeps the speech aliases ("Russian Gr_<name>") in *.lng files
+    if (core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        for (const std::string &curName : fio->_GetPathsOrFilenamesByMask(ALIAS_DIRECTORY, "*.lng", false))
+        {
+            LoadAliasFile(curName.c_str());
+        }
     }
 }
 

@@ -38,6 +38,13 @@ endif()
 if (NOT STORM_USE_CONAN)
     option(STORM_FETCH_SDL "Build SDL2 from source instead of using the system one" ${APPLE})
     set(STORM_FMOD_DIR "" CACHE PATH "Path to the FMOD Engine SDK (contains api/core), sound is disabled when empty")
+    # the sound by miniaudio (public domain) behind the FMOD API the sound service uses: no proprietary SDK
+    if (STORM_FMOD_DIR)
+        set(storm_sound_miniaudio_default OFF)
+    else()
+        set(storm_sound_miniaudio_default ON)
+    endif()
+    option(STORM_SOUND_MINIAUDIO "Play the sound with miniaudio instead of FMOD" ${storm_sound_miniaudio_default})
 endif()
 
 ### Set up output paths
@@ -103,7 +110,7 @@ endif()
 
 # modules that can not be built in the current configuration
 set(STORM_SKIP_MODULES "" CACHE INTERNAL "")
-if (NOT STORM_USE_CONAN AND NOT STORM_FMOD_DIR)
+if (NOT STORM_USE_CONAN AND NOT STORM_FMOD_DIR AND NOT STORM_SOUND_MINIAUDIO)
     message(WARNING "STORM_FMOD_DIR is not set, building without sound")
 endif()
 if (NOT WIN32)

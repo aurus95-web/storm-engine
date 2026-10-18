@@ -19,6 +19,13 @@ SOUND::SOUND()
 //--------------------------------------------------------------------
 SOUND::~SOUND()
 {
+    // Pirates of the Caribbean deletes the entity to load a game: its sounds end with it (the music playing would go on
+    // forever, the loaded scripts know only the music of the save)
+    if (soundService && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN)
+    {
+        soundService->SoundStop(0, 0);
+        soundService->SoundRelease(0);
+    }
 }
 
 //--------------------------------------------------------------------

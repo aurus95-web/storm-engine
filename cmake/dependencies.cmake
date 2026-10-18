@@ -150,10 +150,30 @@ else()
     set(SDL2_LIBRARIES SDL2::SDL2)
 endif()
 
-### FMOD (proprietary, has to be downloaded from fmod.com)
+### FMOD (proprietary, has to be downloaded from fmod.com) or miniaudio behind its API (STORM_SOUND_MINIAUDIO)
 add_library(fmod_sdk INTERFACE)
 add_library(fmod::fmod ALIAS fmod_sdk)
-if (STORM_FMOD_DIR)
+if (STORM_SOUND_MINIAUDIO)
+    # only the single header and stb_vorbis are used, not its CMake project
+    storm_fetch(miniaudio https://github.com/mackron/miniaudio.git 0.11.22 SOURCE_SUBDIR not-used)
+    FetchContent_MakeAvailable(miniaudio)
+    set(fmod_miniaudio_dir "${CMAKE_SOURCE_DIR}/src/libs/sound_service/fmod_miniaudio")
+    add_library(fmod_miniaudio STATIC
+        "${fmod_miniaudio_dir}/src/fmod_miniaudio.cpp"
+        "${fmod_miniaudio_dir}/src/miniaudio_impl.c")
+    target_include_directories(fmod_miniaudio PUBLIC "${fmod_miniaudio_dir}/include"
+        PRIVATE "${miniaudio_SOURCE_DIR}")
+    target_compile_features(fmod_miniaudio PRIVATE cxx_std_17)
+    if (APPLE)
+        # AVAudioSession of iOS
+        set_source_files_properties("${fmod_miniaudio_dir}/src/miniaudio_impl.c" PROPERTIES COMPILE_OPTIONS "-xobjective-c")
+        target_link_libraries(fmod_miniaudio PRIVATE "-framework CoreFoundation" "-framework CoreAudio"
+            "-framework AudioToolbox" "-framework AVFoundation")
+    elseif (UNIX)
+        target_link_libraries(fmod_miniaudio PRIVATE dl pthread m)
+    endif()
+    target_link_libraries(fmod_sdk INTERFACE fmod_miniaudio)
+elseif (STORM_FMOD_DIR)
     set(fmod_core "${STORM_FMOD_DIR}/api/core")
     target_include_directories(fmod_sdk INTERFACE "${fmod_core}/inc")
     if (IOS)

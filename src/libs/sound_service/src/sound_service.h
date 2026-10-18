@@ -221,6 +221,11 @@ class SoundService : public VSoundService
     void Draw2DCircle(const CVECTOR &center, uint32_t dwColor, float fRadius, uint32_t dwColor2, float fRadius2) const;
 
     void ProcessFader(uint16_t idx);
+    void PauseFadedMusic(uint16_t idx);
+    bool IsFadedMusic(uint16_t idx) const;
+    void ResumeFadedMusic(uint16_t idx, int32_t time);
+    // the slot (0, 1) of the music played last
+    uint16_t currentMusicIdx = 0;
 
     uint16_t FreeSound(uint16_t idx);
 };

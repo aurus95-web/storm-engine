@@ -1,4 +1,10 @@
 # Storm-Engine
+
+> **Порт на iPad / iPhone:** «Корсары 2» (Pirates of the Caribbean, 2003) на этом движке — IPA в
+> [релизах](https://github.com/aurus95-web/storm-engine/releases), установка и подготовка игры —
+> [docs/port/IPAD.md](docs/port/IPAD.md).
+> **iPad / iPhone port:** the original Pirates of the Caribbean on iPadOS / iOS, see [docs/port/IPAD.md](docs/port/IPAD.md).
+
 Game engine behind [Sea Dogs](https://en.wikipedia.org/wiki/Sea_Dogs_(video_game)), [Pirates of the Caribbean](https://en.wikipedia.org/wiki/Pirates_of_the_Caribbean_(video_game)) and [Age of Pirates](https://en.wikipedia.org/wiki/Age_of_Pirates_2:_City_of_Abandoned_Ships) games.
 
 [![Join the chat at https://discord.gg/jmwETPGFRe](https://img.shields.io/discord/353218868896071692?color=%237289DA&label=storm-devs&logo=discord&logoColor=white)](https://discord.gg/jmwETPGFRe) 

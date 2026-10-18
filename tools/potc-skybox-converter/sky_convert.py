@@ -61,6 +61,8 @@ def convert(filename):
 
     header.mip_size = mip_size >> 2
     header.height = header.height >> 2
+    # only the first mip level is split
+    header.nmips = 1
     for output_name in ["sky_fr.tga", "sky_lf.tga", "sky_bk.tga", "sky_rt.tga"]:
         output_file_name = path.join(path.dirname(filename), output_name) + ".tx"
         output_file = open(output_file_name, "wb")

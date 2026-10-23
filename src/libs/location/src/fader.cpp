@@ -33,6 +33,7 @@ Fader::Fader()
     textureBackID = -1;
     tipsID = -1;
     eventStart = false;
+    startPosted = false;
     eventEnd = false;
     deleteMe = 0;
 }
@@ -166,6 +167,16 @@ bool Fader::Init()
     return true;
 }
 
+// Pirates of the Caribbean: the start of a fade is reported at once, before the end of another fade that is reported
+// later (LAi_Fade with a quest reload ending at the same time: the reload loaded the new location before it unloaded
+// the old one, every character failed to be placed and the game crashed)
+void Fader::PostStartEvent()
+{
+    startPosted = core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN;
+    if (startPosted)
+        core.PostEvent(fadeIn ? "FaderEvent_StartFadeIn" : "FaderEvent_StartFade", 0, "li", fadeIn, GetId());
+}
+
 // Messages
 uint64_t Fader::ProcessMessage(MESSAGE &message)
 {
@@ -186,6 +197,7 @@ uint64_t Fader::ProcessMessage(MESSAGE &message)
         isAutodelete = message.Long() != 0;
         eventStart = false;
         eventEnd = false;
+        PostStartEvent();
         break;
     case FADER_IN: // Start screen appearance
         alpha = 0.0f;
@@ -205,6 +217,7 @@ uint64_t Fader::ProcessMessage(MESSAGE &message)
         tex = nullptr;
         eventStart = false;
         eventEnd = false;
+        PostStartEvent();
         break;
     case FADER_STARTFRAME:
         haveFrame = true;
@@ -300,7 +313,7 @@ void Fader::Realize(uint32_t delta_time)
 {
     if (!isWork)
         return;
-    if (isStart)
+    if (isStart && !startPosted)
         eventStart = true;
 
     // Capturing and drawing a start frame

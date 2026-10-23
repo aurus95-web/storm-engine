@@ -27,6 +27,11 @@ class Fader : public Entity
     // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
 
+  private:
+    void PostStartEvent();
+
+  public:
+
     void ProcessStage(Stage stage, uint32_t delta) override
     {
         switch (stage)
@@ -79,6 +84,7 @@ class Fader : public Entity
     } drawbuf_back[6], drawbuf_front[6];
 
     bool eventStart;
+    bool startPosted;
     bool eventEnd;
     int32_t deleteMe;
 

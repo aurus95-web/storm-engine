@@ -563,6 +563,11 @@ void SHIP::SetDead()
 
 void SHIP::Execute(uint32_t DeltaTime)
 {
+    // the sea may be deleted (and created again) while the ship lives: the pointer of the deleted one must not be used
+    pSea = static_cast<SEA_BASE *>(core.GetEntityPointer(sea_id));
+    if (!pSea && (sea_id = core.GetEntityId("sea")))
+        pSea = static_cast<SEA_BASE *>(core.GetEntityPointer(sea_id));
+
     auto *pAPerks = GetACharacter()->FindAClass(GetACharacter(), "TmpPerks");
 
     auto *pARocking = GetAShip()->GetAttributeClass("Rocking");

@@ -579,7 +579,10 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
     fightTick -= dltTime;
     if (fightTick <= 0.0f)
     {
-        fightTick = 0.2f; // k3 fix 0.5f;
+        // Pirates of the Caribbean decides twice a second (the later games: 5 times, the enemies attacked and blocked
+        // much more often)
+        fightTick = core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN ? 0.5f
+                                                                                                     : 0.2f; // k3 fix 0.5f;
         FightTick();
     }
     // check the distance to the target
@@ -956,8 +959,10 @@ void NPCharacter::DoFightActionAnalysisNone(float dltTime, NPCharacter *enemy)
         const int32_t grp = chrGroup->FindGroupIndex(chr->group);
         if (grp < 0 || grpIndex < 0)
             return;
-        // The attitude of his group to our
-        if (chrGroup->FindRelation(grpIndex, grp).curState != CharactersGroups::rs_enemy)
+        // The attitude of his group to our; Pirates of the Caribbean attacks the target of the fight task whatever
+        // the groups (the quest fights in new neutral groups: the fighters stood with their swords and waited)
+        if (chrGroup->FindRelation(grpIndex, grp).curState != CharactersGroups::rs_enemy &&
+            !(chr == enemy && core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN))
             continue;
         // This is the enemy
         auto &found_enemy = enemies.emplace_back();

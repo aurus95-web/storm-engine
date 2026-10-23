@@ -256,12 +256,16 @@ void AIFort::AddFortHit(int32_t iCharacterIndex, CVECTOR &vHitPos)
             // VDATA * pVData = core.Event(FORT_CANNON_DAMAGE, "llallfffff", iCharacterIndex,
             // GetIndex(pF->GetACharacter()), pF->pFortLabelAP, pF->GetAllCannonsNum(), pF->GetDamagedCannonsNum(),
             // vPos.x, vPos.y, vPos.z, fDistance, pC->GetDamage()); Assert(pVData);
+            // Pirates of the Caribbean counts the damage of the cannons in percent (the cannon is destroyed at 100), the
+            // engine from 0 to 1: any hit near a cannon destroyed it silently and the fort stopped firing
+            const float fScale =
+                core.GetTargetEngineVersion() <= storm::ENGINE_VERSION::PIRATES_OF_THE_CARIBBEAN ? 100.0f : 1.0f;
             auto *pVData = core.Event(FORT_CANNON_DAMAGE, "llallfffff", iCharacterIndex, GetIndex(pF->GetACharacter()),
                                       pF->pFortLabelAP, iMax, pF->GetDamagedCannonsNum(), vPos.x, vPos.y, vPos.z,
-                                      fDistance, pC->GetDamage());
+                                      fDistance, pC->GetDamage() * fScale);
             Assert(pVData);
 
-            pC->SetDamage(pVData->GetFloat());
+            pC->SetDamage(pVData->GetFloat() / fScale);
         }
     }
 }
